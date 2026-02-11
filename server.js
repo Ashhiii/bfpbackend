@@ -16,6 +16,8 @@ import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import { exec } from "child_process";
 import { fileURLToPath } from "url";
+import os from "os";
+
 
 // -----------------------------
 // PATHS / APP
@@ -574,12 +576,37 @@ app.post("/auth/pin", (req, res) => {
 // -----------------------------
 // PDF GENERATION
 // -----------------------------
-const generatePDF = (record, templateFile, filename, res) => {
-  const templatePath = path.join(__dirname, "templates", templateFile);
-  if (!fs.existsSync(templatePath)) return res.status(404).send("Template not found");
+const findSoffice = () => {
+  const candidates = [
+    "C:\\\\Program Files\\\\LibreOffice\\\\program\\\\soffice.exe",
+    "C:\\\\Program Files (x86)\\\\LibreOffice\\\\program\\\\soffice.exe",
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+};
 
-  const outputDocx = path.join(__dirname, `${filename}.docx`);
-  const outputPdf = path.join(__dirname, `${filename}.pdf`);
+const generatePDF = (record, templateFile, filenameBase, res) => {
+  const templatePath = path.join(__dirname, "templates", templateFile);
+  if (!fs.existsSync(templatePath)) {
+    return res.status(404).send(`Template not found: ${templateFile}`);
+  }
+
+  const soffice = findSoffice();
+  if (!soffice) {
+    return res
+      .status(500)
+      .send("LibreOffice not found. Install LibreOffice or fix soffice path.");
+  }
+
+  // ✅ unique per request
+  const stamp = `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+  const outDir = path.join(os.tmpdir(), "bfp_pdf_out");
+  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+
+  const outputDocx = path.join(outDir, `${filenameBase}-${stamp}.docx`);
+  const outputPdf = path.join(outDir, `${filenameBase}-${stamp}.pdf`);
 
   try {
     const content = fs.readFileSync(templatePath, "binary");
@@ -608,27 +635,50 @@ const generatePDF = (record, templateFile, filename, res) => {
       NFSI_DATE: record.nfsiDate || "",
       OWNER: record.ownerName || "",
       INSPECTORS: record.inspectors || "",
-      TEAM_LEADER: record.teamLeader || "", // appears on templates that use it
+      TEAM_LEADER: record.teamLeader || "",
       DATE: new Date().toLocaleDateString(),
     });
 
     const buf = doc.getZip().generate({ type: "nodebuffer" });
     fs.writeFileSync(outputDocx, buf);
 
-    const sofficePath = `"C:\\Program Files\\LibreOffice\\program\\soffice.exe"`;
-    const command = `${sofficePath} --headless --convert-to pdf "${outputDocx}" --outdir "${__dirname}"`;
+    // ✅ use quotes safely
+    const command = `"${soffice}" --headless --nologo --nolockcheck --norestore --convert-to pdf "${outputDocx}" --outdir "${outDir}"`;
 
-    exec(command, (err) => {
-      if (err) return res.status(500).send("PDF conversion failed");
+    exec(command, (err, stdout, stderr) => {
+      if (err) {
+        console.log("LibreOffice ERROR:", err);
+        console.log("stdout:", stdout);
+        console.log("stderr:", stderr);
+        // cleanup docx
+        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
+        return res.status(500).send("PDF conversion failed. Check backend terminal logs.");
+      }
 
-      res.download(outputPdf, () => {
-        if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
-        if (fs.existsSync(outputPdf)) fs.unlinkSync(outputPdf);
+      // Sometimes LO outputs pdf with same base name (docx->pdf)
+      // We expect it to be: outputDocx replaced with .pdf
+      const expectedPdf = outputDocx.replace(/\.docx$/i, ".pdf");
+
+      const finalPdf = fs.existsSync(expectedPdf) ? expectedPdf : outputPdf;
+
+      if (!fs.existsSync(finalPdf)) {
+        console.log("PDF not found after conversion.");
+        console.log("expectedPdf:", expectedPdf);
+        // cleanup
+        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
+        return res.status(500).send("PDF file not produced. Check LibreOffice conversion.");
+      }
+
+      res.download(finalPdf, () => {
+        // cleanup both
+        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
+        try { if (fs.existsSync(finalPdf)) fs.unlinkSync(finalPdf); } catch {}
       });
     });
   } catch (e) {
-    console.log(e);
-    res.status(500).send("PDF generation failed");
+    console.log("PDF generation failed:", e);
+    try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
+    return res.status(500).send("PDF generation failed (docxtemplater/render). Check terminal.");
   }
 };
 
