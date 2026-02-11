@@ -8,7 +8,7 @@
 // -----------------------------
 // LOAD .env FIRST
 // -----------------------------
-import "dotenv/config";
+import dotenv from "dotenv";
 
 // -----------------------------
 // IMPORTS
@@ -34,6 +34,8 @@ const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
+dotenv.config();
+
 
 // -----------------------------
 // FILES
