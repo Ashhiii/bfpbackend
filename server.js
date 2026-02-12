@@ -2,13 +2,8 @@
 // ✅ Current + Archive + Documents
 // ✅ Renew logs (history.json) + get latest renewed per entityKey
 // ✅ Data Manager endpoints (list + delete)
-// ✅ Export endpoint (returns JSON list with latest renewed per entityKey for a month)
-// ✅ PDF generation endpoints (LibreOffice via SOFFICE_PATH or auto-detect)
-
-// -----------------------------
-// LOAD .env FIRST
-// -----------------------------
-import dotenv from "dotenv";
+// ✅ Export Excel endpoint (returns JSON list with latest renewed per entityKey for a month)
+// ✅ PDF generation endpoints (LibreOffice)
 
 // -----------------------------
 // IMPORTS
@@ -17,11 +12,12 @@ import express from "express";
 import cors from "cors";
 import fs from "fs";
 import path from "path";
-import os from "os";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
-import { exec, execSync } from "child_process";
+import { exec } from "child_process";
 import { fileURLToPath } from "url";
+import os from "os";
+
 
 // -----------------------------
 // PATHS / APP
@@ -30,20 +26,18 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = 5000;
 
 app.use(cors());
 app.use(express.json());
-dotenv.config();
-
 
 // -----------------------------
 // FILES
 // -----------------------------
-const DATA_FILE = path.join(__dirname, "records.json"); // current records (array)
-const ARCHIVE_FILE = path.join(__dirname, "archive.json"); // { "YYYY-MM": [records...] }
-const DOCUMENTS_FILE = path.join(__dirname, "documents.json"); // documents (array)
-const HISTORY_FILE = path.join(__dirname, "history.json"); // renew logs (array)
+const DATA_FILE = path.join(__dirname, "records.json");       // current records (array)
+const ARCHIVE_FILE = path.join(__dirname, "archive.json");    // { "YYYY-MM": [records...] }
+const DOCUMENTS_FILE = path.join(__dirname, "documents.json");// documents (array)
+const HISTORY_FILE = path.join(__dirname, "history.json");    // renew logs (array)
 
 // -----------------------------
 // HELPERS
@@ -60,8 +54,7 @@ ensureFile(DOCUMENTS_FILE, []);
 ensureFile(HISTORY_FILE, []);
 
 const readJSON = (file) => JSON.parse(fs.readFileSync(file, "utf-8"));
-const writeJSON = (file, data) =>
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+const writeJSON = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2));
 
 const normalize = (v) => String(v ?? "").trim();
 
@@ -143,30 +136,13 @@ const getLatestRenewedByEntityKey = (entityKey) => {
 
   const history = readJSON(HISTORY_FILE) || [];
   const renewed = history
-    .filter(
-      (h) =>
-        normalizeEntityKey(h.entityKey) === ek &&
-        String(h.action || "").toUpperCase() === "RENEWED"
-    )
+    .filter((h) => normalizeEntityKey(h.entityKey) === ek && String(h.action || "").toUpperCase() === "RENEWED")
     .sort((a, b) => String(a.changedAt || "").localeCompare(String(b.changedAt || "")));
 
   if (!renewed.length) return null;
   const last = renewed[renewed.length - 1];
   return ensureEntityKey(last.data);
 };
-
-// -----------------------------
-// ✅ AUTH PIN
-// -----------------------------
-app.post("/auth/pin", (req, res) => {
-  const { pin } = req.body || {};
-  const OK_PIN = process.env.PIN || "1234";
-
-  if (String(pin) === String(OK_PIN)) {
-    return res.json({ ok: true });
-  }
-  return res.status(401).json({ ok: false });
-});
 
 // -----------------------------
 // RECORDS (CURRENT)
@@ -333,7 +309,36 @@ app.get("/records/renewed/:entityKey", (req, res) => {
   }
 });
 
-// List all renewed (simple)
+
+// ✅ LIST ALL RENEWED (for Renewed page)
+app.get("/records/renewed", (req, res) => {
+  try {
+    const history = readJSON(HISTORY_FILE) || [];
+
+    // get only renewed actions
+    const renewed = history
+      .filter((h) => h.kind === "renewed")
+      .map((h) => {
+        // keep both top-level and data (for your normalize)
+        return {
+          id: h.id,
+          entityKey: h.entityKey,
+          renewedAt: h.changedAt || h.createdAt || "",
+          source: h.source || "",
+          data: h.data || h.newRecord || {}, // depends on your saved shape
+        };
+      })
+      .reverse(); // latest first
+
+    return res.json({ records: renewed });
+  } catch (e) {
+    console.error("GET /records/renewed error:", e);
+    return res.status(500).json({ records: [], message: "Failed to load renewed" });
+  }
+});
+
+
+// Get all renewed (for dashboard)
 app.get("/records/renewed-all", (req, res) => {
   try {
     const history = readJSON(HISTORY_FILE) || [];
@@ -373,6 +378,8 @@ app.delete("/records/renewed/:id", (req, res) => {
 });
 
 // Renew endpoint
+// ✅ IMPORTANT: DOES NOT add to current table unless you want it.
+// Here: we DO NOT push to DATA_FILE to prevent adding to current.
 app.post("/records/renew", (req, res) => {
   try {
     let { entityKey, source, oldRecord, updatedRecord } = req.body;
@@ -555,43 +562,28 @@ app.get("/manager/items", (req, res) => {
   }
 });
 
+
+const CORRECT_PIN = "1234";
+
+app.post("/auth/pin", (req, res) => {
+  const pin = String(req.body?.pin || "").trim();
+  if (!pin) return res.status(400).json({ ok: false, message: "Missing PIN" });
+  if (pin === CORRECT_PIN) return res.json({ ok: true });
+  return res.status(401).json({ ok: false, message: "Incorrect PIN" });
+});
+
+
 // -----------------------------
-// PDF GENERATION (LibreOffice)
+// PDF GENERATION
 // -----------------------------
 const findSoffice = () => {
-  // 1) Use env first
-  const envPath = process.env.SOFFICE_PATH;
-  if (envPath && fs.existsSync(envPath)) return envPath;
-
-  // 2) Common paths
   const candidates = [
-    // Windows
     "C:\\\\Program Files\\\\LibreOffice\\\\program\\\\soffice.exe",
     "C:\\\\Program Files (x86)\\\\LibreOffice\\\\program\\\\soffice.exe",
-    // Linux
-    "/usr/bin/libreoffice",
-    "/usr/bin/soffice",
-    "/snap/bin/libreoffice",
-    "/snap/bin/soffice",
-    // Mac
-    "/Applications/LibreOffice.app/Contents/MacOS/soffice",
   ];
   for (const p of candidates) {
     if (fs.existsSync(p)) return p;
   }
-
-  // 3) Try which (Linux/Mac)
-  try {
-    const which = (cmd) =>
-      execSync(`which ${cmd}`, { stdio: ["ignore", "pipe", "ignore"] })
-        .toString()
-        .trim();
-    const p1 = which("soffice");
-    if (p1 && fs.existsSync(p1)) return p1;
-    const p2 = which("libreoffice");
-    if (p2 && fs.existsSync(p2)) return p2;
-  } catch {}
-
   return null;
 };
 
@@ -603,9 +595,9 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
 
   const soffice = findSoffice();
   if (!soffice) {
-    return res.status(500).send(
-      "LibreOffice not found. Install LibreOffice OR set SOFFICE_PATH in .env to your soffice.exe path."
-    );
+    return res
+      .status(500)
+      .send("LibreOffice not found. Install LibreOffice or fix soffice path.");
   }
 
   // ✅ unique per request
@@ -614,6 +606,7 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
   const outputDocx = path.join(outDir, `${filenameBase}-${stamp}.docx`);
+  const outputPdf = path.join(outDir, `${filenameBase}-${stamp}.pdf`);
 
   try {
     const content = fs.readFileSync(templatePath, "binary");
@@ -649,7 +642,7 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
     const buf = doc.getZip().generate({ type: "nodebuffer" });
     fs.writeFileSync(outputDocx, buf);
 
-    // ✅ Use quotes (spaces safe)
+    // ✅ use quotes safely
     const command = `"${soffice}" --headless --nologo --nolockcheck --norestore --convert-to pdf "${outputDocx}" --outdir "${outDir}"`;
 
     exec(command, (err, stdout, stderr) => {
@@ -657,38 +650,34 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
         console.log("LibreOffice ERROR:", err);
         console.log("stdout:", stdout);
         console.log("stderr:", stderr);
-        try {
-          if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
-        } catch {}
+        // cleanup docx
+        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
         return res.status(500).send("PDF conversion failed. Check backend terminal logs.");
       }
 
+      // Sometimes LO outputs pdf with same base name (docx->pdf)
+      // We expect it to be: outputDocx replaced with .pdf
       const expectedPdf = outputDocx.replace(/\.docx$/i, ".pdf");
 
-      if (!fs.existsSync(expectedPdf)) {
+      const finalPdf = fs.existsSync(expectedPdf) ? expectedPdf : outputPdf;
+
+      if (!fs.existsSync(finalPdf)) {
         console.log("PDF not found after conversion.");
         console.log("expectedPdf:", expectedPdf);
-        try {
-          if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
-        } catch {}
+        // cleanup
+        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
         return res.status(500).send("PDF file not produced. Check LibreOffice conversion.");
       }
 
-      res.download(expectedPdf, () => {
+      res.download(finalPdf, () => {
         // cleanup both
-        try {
-          if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
-        } catch {}
-        try {
-          if (fs.existsSync(expectedPdf)) fs.unlinkSync(expectedPdf);
-        } catch {}
+        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
+        try { if (fs.existsSync(finalPdf)) fs.unlinkSync(finalPdf); } catch {}
       });
     });
   } catch (e) {
     console.log("PDF generation failed:", e);
-    try {
-      if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
-    } catch {}
+    try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
     return res.status(500).send("PDF generation failed (docxtemplater/render). Check terminal.");
   }
 };
@@ -718,9 +707,7 @@ app.get("/records/:id/:docType/pdf", (req, res) => {
 
 // DOCUMENTS PDF generation
 app.get("/documents/:id/:docType/pdf", (req, res) => {
-  const doc = (readJSON(DOCUMENTS_FILE) || []).find(
-    (r) => String(r.id) == String(req.params.id)
-  );
+  const doc = (readJSON(DOCUMENTS_FILE) || []).find((r) => String(r.id) == String(req.params.id));
   if (!doc) return res.status(404).send("Document not found");
 
   let templateFile = "";
@@ -732,11 +719,11 @@ app.get("/documents/:id/:docType/pdf", (req, res) => {
   generatePDF(doc, templateFile, `doc-${req.params.docType}-${doc.id}`, res);
 });
 
+
+
 // -----------------------------
 // START
 // -----------------------------
 app.listen(PORT, () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);
-  console.log("PIN:", process.env.PIN ? "(set)" : "(default 1234)");
-  console.log("SOFFICE_PATH:", process.env.SOFFICE_PATH || "(not set)");
 });
