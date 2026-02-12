@@ -16,6 +16,7 @@ COPY . .
 
 ENV NODE_ENV=production
 ENV PORT=10000
+ENV SOFFICE_PATH=/usr/lib/libreoffice/program/soffice
 
 EXPOSE 10000
 
