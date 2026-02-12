@@ -9,7 +9,7 @@ WORKDIR /app
 
 # Copy package files first (better caching)
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm install --omit=dev
 
 # Copy the rest
 COPY . .
