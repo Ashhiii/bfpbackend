@@ -2,19 +2,22 @@
 // ✅ Current + Archive + Documents
 // ✅ Renew logs (history.json) + get latest renewed per entityKey
 // ✅ Data Manager endpoints (list + delete)
-// ✅ Export endpoint (returns JSON list with latest renewed per entityKey for a month)
-// ✅ PDF generation endpoints (NO LibreOffice) using mammoth + puppeteer
+// ✅ Export Excel endpoint (returns JSON list with latest renewed per entityKey for a month)
+// ✅ PDF generation endpoints (LibreOffice)
 
+// -----------------------------
+// IMPORTS
+// -----------------------------
 import express from "express";
 import cors from "cors";
 import fs from "fs";
 import path from "path";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
+import { exec } from "child_process";
 import { fileURLToPath } from "url";
 import os from "os";
-import mammoth from "mammoth";
-import puppeteer from "puppeteer";
+
 
 // -----------------------------
 // PATHS / APP
@@ -23,24 +26,26 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = 5000;
 
 app.use(cors());
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json());
 
 // -----------------------------
 // FILES
 // -----------------------------
-const DATA_FILE = path.join(__dirname, "records.json");        // current records (array)
-const ARCHIVE_FILE = path.join(__dirname, "archive.json");     // { "YYYY-MM": [records...] }
-const DOCUMENTS_FILE = path.join(__dirname, "documents.json"); // documents (array)
-const HISTORY_FILE = path.join(__dirname, "history.json");     // renew logs (array)
+const DATA_FILE = path.join(__dirname, "records.json");       // current records (array)
+const ARCHIVE_FILE = path.join(__dirname, "archive.json");    // { "YYYY-MM": [records...] }
+const DOCUMENTS_FILE = path.join(__dirname, "documents.json");// documents (array)
+const HISTORY_FILE = path.join(__dirname, "history.json");    // renew logs (array)
 
 // -----------------------------
 // HELPERS
 // -----------------------------
 const ensureFile = (file, defaultData) => {
-  if (!fs.existsSync(file)) fs.writeFileSync(file, JSON.stringify(defaultData, null, 2));
+  if (!fs.existsSync(file)) {
+    fs.writeFileSync(file, JSON.stringify(defaultData, null, 2));
+  }
 };
 
 ensureFile(DATA_FILE, []);
@@ -76,40 +81,44 @@ const findRecordById = (id) => {
   return null;
 };
 
-const pickAllowedRecordFields = (obj = {}) => ({
-  no: obj.no ?? "",
-  fsicAppNo: obj.fsicAppNo ?? "",
-  natureOfInspection: obj.natureOfInspection ?? "",
-  ownerName: obj.ownerName ?? "",
-  establishmentName: obj.establishmentName ?? "",
-  businessAddress: obj.businessAddress ?? "",
-  contactNumber: obj.contactNumber ?? "",
-  dateInspected: obj.dateInspected ?? "",
-  ioNumber: obj.ioNumber ?? "",
-  ioDate: obj.ioDate ?? "",
-  nfsiNumber: obj.nfsiNumber ?? "",
-  nfsiDate: obj.nfsiDate ?? "",
-  fsicValidity: obj.fsicValidity ?? "",
-  defects: obj.defects ?? "",
-  inspectors: obj.inspectors ?? "",
-  occupancyType: obj.occupancyType ?? "",
-  buildingDesc: obj.buildingDesc ?? "",
-  floorArea: obj.floorArea ?? "",
-  buildingHeight: obj.buildingHeight ?? "",
-  storeyCount: obj.storeyCount ?? "",
-  highRise: obj.highRise ?? "",
-  fsmr: obj.fsmr ?? "",
-  remarks: obj.remarks ?? "",
-  orNumber: obj.orNumber ?? "",
-  orAmount: obj.orAmount ?? "",
-  orDate: obj.orDate ?? "",
-});
+const pickAllowedRecordFields = (obj = {}) => {
+  // ✅ keeps only record fields (prevents weird extra keys)
+  return {
+    no: obj.no ?? "",
+    fsicAppNo: obj.fsicAppNo ?? "",
+    natureOfInspection: obj.natureOfInspection ?? "",
+    ownerName: obj.ownerName ?? "",
+    establishmentName: obj.establishmentName ?? "",
+    businessAddress: obj.businessAddress ?? "",
+    contactNumber: obj.contactNumber ?? "",
+    dateInspected: obj.dateInspected ?? "",
+    ioNumber: obj.ioNumber ?? "",
+    ioDate: obj.ioDate ?? "",
+    nfsiNumber: obj.nfsiNumber ?? "",
+    nfsiDate: obj.nfsiDate ?? "",
+    fsicValidity: obj.fsicValidity ?? "",
+    defects: obj.defects ?? "",
+    inspectors: obj.inspectors ?? "",
+    occupancyType: obj.occupancyType ?? "",
+    buildingDesc: obj.buildingDesc ?? "",
+    floorArea: obj.floorArea ?? "",
+    buildingHeight: obj.buildingHeight ?? "",
+    storeyCount: obj.storeyCount ?? "",
+    highRise: obj.highRise ?? "",
+    fsmr: obj.fsmr ?? "",
+    remarks: obj.remarks ?? "",
+    orNumber: obj.orNumber ?? "",
+    orAmount: obj.orAmount ?? "",
+    orDate: obj.orDate ?? "",
+  };
+};
 
 const buildRenewedRecord = ({ entityKey, updatedRecord }) => {
+  // ✅ teamLeader only appears on renewed record
   const base = pickAllowedRecordFields(updatedRecord || {});
   const now = new Date().toISOString();
 
-  return ensureEntityKey({
+  const newRecord = ensureEntityKey({
     id: Date.now(),
     entityKey,
     ...base,
@@ -117,6 +126,8 @@ const buildRenewedRecord = ({ entityKey, updatedRecord }) => {
     renewedAt: now,
     createdAt: now,
   });
+
+  return newRecord;
 };
 
 const getLatestRenewedByEntityKey = (entityKey) => {
@@ -125,15 +136,12 @@ const getLatestRenewedByEntityKey = (entityKey) => {
 
   const history = readJSON(HISTORY_FILE) || [];
   const renewed = history
-    .filter(
-      (h) =>
-        normalizeEntityKey(h.entityKey) === ek &&
-        String(h.action || "").toUpperCase() === "RENEWED"
-    )
+    .filter((h) => normalizeEntityKey(h.entityKey) === ek && String(h.action || "").toUpperCase() === "RENEWED")
     .sort((a, b) => String(a.changedAt || "").localeCompare(String(b.changedAt || "")));
 
   if (!renewed.length) return null;
-  return ensureEntityKey(renewed[renewed.length - 1].data);
+  const last = renewed[renewed.length - 1];
+  return ensureEntityKey(last.data);
 };
 
 // -----------------------------
@@ -152,12 +160,14 @@ app.post("/records", (req, res) => {
       id: Date.now(),
       createdAt: new Date().toISOString(),
       ...pickAllowedRecordFields(req.body || {}),
+      // keep entityKey if passed; else generate from FSIC
       entityKey: req.body?.entityKey,
     };
     newRecord = ensureEntityKey(newRecord);
 
     records.push(newRecord);
     writeJSON(DATA_FILE, records);
+
     return res.json({ success: true, data: newRecord });
   } catch (e) {
     console.log(e);
@@ -165,6 +175,7 @@ app.post("/records", (req, res) => {
   }
 });
 
+// DELETE current record
 app.delete("/records/:id", (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -185,7 +196,9 @@ app.delete("/records/:id", (req, res) => {
 app.post("/records/close-month", (req, res) => {
   try {
     const records = (readJSON(DATA_FILE) || []).map(ensureEntityKey);
-    if (records.length === 0) return res.json({ success: false, message: "No records" });
+    if (records.length === 0) {
+      return res.json({ success: false, message: "No records" });
+    }
 
     const now = new Date();
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -219,6 +232,7 @@ app.get("/archive/:month", (req, res) => {
   res.json(list);
 });
 
+// DELETE archived record by month
 app.delete("/archive/:month/:id", (req, res) => {
   try {
     const month = String(req.params.month || "");
@@ -248,7 +262,11 @@ app.get("/documents", (req, res) => {
 app.post("/documents", (req, res) => {
   try {
     const docs = readJSON(DOCUMENTS_FILE) || [];
-    const newDoc = { id: Date.now(), createdAt: new Date().toISOString(), ...req.body };
+    const newDoc = {
+      id: Date.now(),
+      createdAt: new Date().toISOString(),
+      ...req.body,
+    };
     docs.push(newDoc);
     writeJSON(DOCUMENTS_FILE, docs);
     return res.json({ success: true, data: newDoc });
@@ -258,6 +276,7 @@ app.post("/documents", (req, res) => {
   }
 });
 
+// DELETE document
 app.delete("/documents/:id", (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -275,6 +294,8 @@ app.delete("/documents/:id", (req, res) => {
 // -----------------------------
 // RENEW (HISTORY)
 // -----------------------------
+
+// Get latest renewed record for this entityKey
 app.get("/records/renewed/:entityKey", (req, res) => {
   try {
     const ek = normalizeEntityKey(decodeURIComponent(req.params.entityKey || ""));
@@ -288,7 +309,36 @@ app.get("/records/renewed/:entityKey", (req, res) => {
   }
 });
 
-// Get all renewed (for dashboard / other usage)
+
+// ✅ LIST ALL RENEWED (for Renewed page)
+app.get("/records/renewed", (req, res) => {
+  try {
+    const history = readJSON(HISTORY_FILE) || [];
+
+    // get only renewed actions
+    const renewed = history
+      .filter((h) => h.kind === "renewed")
+      .map((h) => {
+        // keep both top-level and data (for your normalize)
+        return {
+          id: h.id,
+          entityKey: h.entityKey,
+          renewedAt: h.changedAt || h.createdAt || "",
+          source: h.source || "",
+          data: h.data || h.newRecord || {}, // depends on your saved shape
+        };
+      })
+      .reverse(); // latest first
+
+    return res.json({ records: renewed });
+  } catch (e) {
+    console.error("GET /records/renewed error:", e);
+    return res.status(500).json({ records: [], message: "Failed to load renewed" });
+  }
+});
+
+
+// Get all renewed (for dashboard)
 app.get("/records/renewed-all", (req, res) => {
   try {
     const history = readJSON(HISTORY_FILE) || [];
@@ -306,6 +356,7 @@ app.get("/records/renewed-all", (req, res) => {
   }
 });
 
+// Delete a renewed record log by record id (removes matching RENEWED entries)
 app.delete("/records/renewed/:id", (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -326,6 +377,9 @@ app.delete("/records/renewed/:id", (req, res) => {
   }
 });
 
+// Renew endpoint
+// ✅ IMPORTANT: DOES NOT add to current table unless you want it.
+// Here: we DO NOT push to DATA_FILE to prevent adding to current.
 app.post("/records/renew", (req, res) => {
   try {
     let { entityKey, source, oldRecord, updatedRecord } = req.body;
@@ -348,6 +402,7 @@ app.post("/records/renew", (req, res) => {
     const now = new Date().toISOString();
     const history = readJSON(HISTORY_FILE) || [];
 
+    // log PREVIOUS snapshot
     history.push({
       entityKey,
       source: source || "Unknown",
@@ -356,8 +411,10 @@ app.post("/records/renew", (req, res) => {
       data: oldRecord,
     });
 
+    // build RENEWED record
     const newRecord = buildRenewedRecord({ entityKey, updatedRecord });
 
+    // log RENEWED
     history.push({
       entityKey,
       source: "Renewed",
@@ -367,6 +424,7 @@ app.post("/records/renew", (req, res) => {
     });
 
     writeJSON(HISTORY_FILE, history);
+
     return res.json({ success: true, newRecord });
   } catch (e) {
     console.log(e);
@@ -375,16 +433,20 @@ app.post("/records/renew", (req, res) => {
 });
 
 // -----------------------------
-// EXPORT endpoint (archive month)
+// EXPORT endpoint (for archive month)
+// returns JSON array where each record is replaced by latest renewed (if exists)
 // -----------------------------
 app.get("/records/export", (req, res) => {
   try {
     const month = normalize(req.query.month);
-    if (!month) return res.status(400).json({ success: false, message: "Missing month" });
+    if (!month) {
+      return res.status(400).json({ success: false, message: "Missing month" });
+    }
 
     const archive = readJSON(ARCHIVE_FILE) || {};
     const list = (archive[month] || []).map(ensureEntityKey);
 
+    // replace by latest renewed if exists
     const replaced = list.map((r) => {
       const ek = normalizeEntityKey(r.entityKey);
       const latest = ek ? getLatestRenewedByEntityKey(ek) : null;
@@ -399,7 +461,7 @@ app.get("/records/export", (req, res) => {
 });
 
 // -----------------------------
-// DATA MANAGER endpoint
+// DATA MANAGER endpoint (list combined items)
 // -----------------------------
 app.get("/manager/items", (req, res) => {
   try {
@@ -421,6 +483,7 @@ app.get("/manager/items", (req, res) => {
       });
     };
 
+    // current
     if (scope === "all" || scope === "current") {
       const current = (readJSON(DATA_FILE) || []).map(ensureEntityKey);
       current.forEach((r) =>
@@ -435,6 +498,7 @@ app.get("/manager/items", (req, res) => {
       );
     }
 
+    // archive
     if (scope === "all" || scope === "archive") {
       const archive = readJSON(ARCHIVE_FILE) || {};
       const months = month ? [month] : Object.keys(archive);
@@ -454,6 +518,7 @@ app.get("/manager/items", (req, res) => {
       });
     }
 
+    // documents
     if (scope === "all" || scope === "documents") {
       const docs = readJSON(DOCUMENTS_FILE) || [];
       docs.forEach((d) =>
@@ -467,6 +532,7 @@ app.get("/manager/items", (req, res) => {
       );
     }
 
+    // renewed logs
     if (scope === "all" || scope === "renewed") {
       const history = readJSON(HISTORY_FILE) || [];
       history
@@ -484,6 +550,7 @@ app.get("/manager/items", (req, res) => {
         });
     }
 
+    // newest first
     items.sort((a, b) =>
       String(b.changedAt || b.createdAt).localeCompare(String(a.changedAt || a.createdAt))
     );
@@ -495,10 +562,8 @@ app.get("/manager/items", (req, res) => {
   }
 });
 
-// -----------------------------
-// AUTH PIN
-// -----------------------------
-const CORRECT_PIN = process.env.PIN || "1234";
+
+const CORRECT_PIN = "1234";
 
 app.post("/auth/pin", (req, res) => {
   const pin = String(req.body?.pin || "").trim();
@@ -507,24 +572,50 @@ app.post("/auth/pin", (req, res) => {
   return res.status(401).json({ ok: false, message: "Incorrect PIN" });
 });
 
-// -----------------------------
-// PDF GENERATION (NO LibreOffice)
-// -----------------------------
-const tempDir = path.join(os.tmpdir(), "bfp_pdf_out");
-if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
-const generatePDF = async (record, templateFile, filenameBase, res) => {
+// -----------------------------
+// PDF GENERATION
+// -----------------------------
+const findSoffice = () => {
+  const envPath = process.env.SOFFICE_PATH;
+  if (envPath && fs.existsSync(envPath)) return envPath;
+
+  const candidates = [
+    "/usr/bin/libreoffice",
+    "/usr/bin/soffice",
+    "/usr/lib/libreoffice/program/soffice",
+  ];
+
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+
+  return null;
+};
+
+
+const generatePDF = (record, templateFile, filenameBase, res) => {
   const templatePath = path.join(__dirname, "templates", templateFile);
   if (!fs.existsSync(templatePath)) {
     return res.status(404).send(`Template not found: ${templateFile}`);
   }
 
-  // unique per request
+  const soffice = findSoffice();
+  if (!soffice) {
+    return res
+      .status(500)
+      .send("LibreOffice not found. Install LibreOffice or fix soffice path.");
+  }
+
+  // ✅ unique per request
   const stamp = `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
-  const outputDocx = path.join(tempDir, `${filenameBase}-${stamp}.docx`);
+  const outDir = path.join(os.tmpdir(), "bfp_pdf_out");
+  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+
+  const outputDocx = path.join(outDir, `${filenameBase}-${stamp}.docx`);
+  const outputPdf = path.join(outDir, `${filenameBase}-${stamp}.pdf`);
 
   try {
-    // 1) Render DOCX from template
     const content = fs.readFileSync(templatePath, "binary");
     const zip = new PizZip(content);
     const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
@@ -558,71 +649,57 @@ const generatePDF = async (record, templateFile, filenameBase, res) => {
     const buf = doc.getZip().generate({ type: "nodebuffer" });
     fs.writeFileSync(outputDocx, buf);
 
-    // 2) DOCX -> HTML
-    const { value: htmlBody } = await mammoth.convertToHtml({ path: outputDocx });
+    // ✅ use quotes safely
+const command = `${soffice} --headless --nologo --nolockcheck --norestore --convert-to pdf "${outputDocx}" --outdir "${outDir}"`;
 
-    const html = `
-<!doctype html>
-<html>
-<head>
-<meta charset="utf-8" />
-<style>
-  body { font-family: Arial, sans-serif; font-size: 12px; padding: 28px; }
-  table { width: 100%; border-collapse: collapse; }
-  td, th { vertical-align: top; }
-</style>
-</head>
-<body>
-${htmlBody}
-</body>
-</html>`.trim();
+    exec(command, (err, stdout, stderr) => {
+      if (err) {
+        console.log("LibreOffice ERROR:", err);
+        console.log("stdout:", stdout);
+        console.log("stderr:", stderr);
+        // cleanup docx
+        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
+        return res.status(500).send("PDF conversion failed. Check backend terminal logs.");
+      }
 
-    // 3) HTML -> PDF (Puppeteer)
-    const browser = await puppeteer.launch({
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      // Sometimes LO outputs pdf with same base name (docx->pdf)
+      // We expect it to be: outputDocx replaced with .pdf
+      const expectedPdf = outputDocx.replace(/\.docx$/i, ".pdf");
+
+      const finalPdf = fs.existsSync(expectedPdf) ? expectedPdf : outputPdf;
+
+      if (!fs.existsSync(finalPdf)) {
+        console.log("PDF not found after conversion.");
+        console.log("expectedPdf:", expectedPdf);
+        // cleanup
+        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
+        return res.status(500).send("PDF file not produced. Check LibreOffice conversion.");
+      }
+
+      res.download(finalPdf, () => {
+        // cleanup both
+        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
+        try { if (fs.existsSync(finalPdf)) fs.unlinkSync(finalPdf); } catch {}
+      });
     });
-
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
-
-    const pdfBuffer = await page.pdf({
-      format: "A4",
-      printBackground: true,
-      margin: { top: "15mm", right: "12mm", bottom: "15mm", left: "12mm" },
-    });
-
-    await browser.close();
-
-    // cleanup docx
-    try {
-      if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
-    } catch {}
-
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="${filenameBase}.pdf"`);
-    return res.send(pdfBuffer);
   } catch (e) {
     console.log("PDF generation failed:", e);
-
-    try {
-      if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
-    } catch {}
-
-    return res.status(500).send("PDF generation failed. Check backend logs.");
+    try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
+    return res.status(500).send("PDF generation failed (docxtemplater/render). Check terminal.");
   }
 };
 
 // FSIC Certificate
-app.get("/records/:id/certificate/:type/pdf", async (req, res) => {
+app.get("/records/:id/certificate/:type/pdf", (req, res) => {
   const record = findRecordById(req.params.id);
   if (!record) return res.status(404).send("Record not found");
 
   const templateFile = req.params.type === "owner" ? "fsic-owner.docx" : "fsic-bfp.docx";
-  return generatePDF(record, templateFile, `fsic-${record.id}`, res);
+  generatePDF(record, templateFile, `fsic-${record.id}`, res);
 });
 
 // IO / REINSPECTION / NFSI for records
-app.get("/records/:id/:docType/pdf", async (req, res) => {
+app.get("/records/:id/:docType/pdf", (req, res) => {
   const record = findRecordById(req.params.id);
   if (!record) return res.status(404).send("Record not found");
 
@@ -632,11 +709,11 @@ app.get("/records/:id/:docType/pdf", async (req, res) => {
   else if (req.params.docType === "nfsi") templateFile = "nfsi-form.docx";
   else return res.status(400).send("Invalid type");
 
-  return generatePDF(record, templateFile, `${req.params.docType}-${record.id}`, res);
+  generatePDF(record, templateFile, `${req.params.docType}-${record.id}`, res);
 });
 
 // DOCUMENTS PDF generation
-app.get("/documents/:id/:docType/pdf", async (req, res) => {
+app.get("/documents/:id/:docType/pdf", (req, res) => {
   const doc = (readJSON(DOCUMENTS_FILE) || []).find((r) => String(r.id) == String(req.params.id));
   if (!doc) return res.status(404).send("Document not found");
 
@@ -646,12 +723,18 @@ app.get("/documents/:id/:docType/pdf", async (req, res) => {
   else if (req.params.docType === "nfsi") templateFile = "nfsi-form.docx";
   else return res.status(400).send("Invalid type");
 
-  return generatePDF(doc, templateFile, `doc-${req.params.docType}-${doc.id}`, res);
+  generatePDF(doc, templateFile, `doc-${req.params.docType}-${doc.id}`, res);
 });
+
+
 
 // -----------------------------
 // START
 // -----------------------------
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Backend running on port ${PORT}`);
+  console.log("PIN:", process.env.PIN ? "(set)" : "(default 1234)");
+  console.log("SOFFICE_PATH:", process.env.SOFFICE_PATH || "(not set)");
 });
+
