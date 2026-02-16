@@ -121,6 +121,9 @@ const pickAllowedRecordFields = (obj = {}) => {
     orNumber: obj.orNumber ?? obj.OR_NUMBER ?? "",
     orAmount: obj.orAmount ?? obj.OR_AMOUNT ?? "",
     orDate: obj.orDate ?? obj.OR_DATE ?? "",
+    
+    chiefName: obj.chiefName ?? obj.CHIEF ?? "",
+    marshalName: obj.marshalName ?? obj.MARSHAL ?? "",
   };
 };
 
