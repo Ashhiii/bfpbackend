@@ -1,4 +1,4 @@
-// server.js (FULL) — BFP System Backend (Docker + Render Ready)
+// server.js (UPDATED FULL) — BFP System Backend (Docker + Render Ready)
 // ✅ Current + Archive + Documents
 // ✅ Renew logs (history.json) + get latest renewed per entityKey
 // ✅ Data Manager endpoints (list + delete)
@@ -22,8 +22,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-
-// ✅ Render uses process.env.PORT
 const PORT = Number(process.env.PORT) || 10000;
 
 // -----------------------------
@@ -68,7 +66,7 @@ const normalize = (v) => String(v ?? "").trim();
 const ensureEntityKey = (r) => {
   if (!r) return r;
   if (r.entityKey) return r;
-  const fsic = normalize(r.fsicAppNo);
+  const fsic = normalize(r.fsicAppNo || r.FSIC_APP_NO || r.FSIC_NUMBER);
   return { ...r, entityKey: fsic ? `fsic:${fsic}` : `rec:${r.id || Date.now()}` };
 };
 
@@ -88,40 +86,70 @@ const findRecordById = (id) => {
   return null;
 };
 
+// ✅ accepts BOTH:
+// - old ALL CAPS (FSIC_APP_NO, OWNERS_NAME...)
+// - new camelCase (fsicAppNo, ownerName...)
 const pickAllowedRecordFields = (obj = {}) => {
-  // ✅ keeps only record fields (prevents weird extra keys)
   return {
-    no: obj.no ?? "",
-    fsicAppNo: obj.fsicAppNo ?? "",
-    natureOfInspection: obj.natureOfInspection ?? "",
-    ownerName: obj.ownerName ?? "",
-    establishmentName: obj.establishmentName ?? "",
-    businessAddress: obj.businessAddress ?? "",
-    contactNumber: obj.contactNumber ?? "",
-    dateInspected: obj.dateInspected ?? "",
-    ioNumber: obj.ioNumber ?? "",
-    ioDate: obj.ioDate ?? "",
-    nfsiNumber: obj.nfsiNumber ?? "",
-    nfsiDate: obj.nfsiDate ?? "",
-    fsicValidity: obj.fsicValidity ?? "",
-    defects: obj.defects ?? "",
-    inspectors: obj.inspectors ?? "",
-    occupancyType: obj.occupancyType ?? "",
-    buildingDesc: obj.buildingDesc ?? "",
-    floorArea: obj.floorArea ?? "",
-    buildingHeight: obj.buildingHeight ?? "",
-    storeyCount: obj.storeyCount ?? "",
-    highRise: obj.highRise ?? "",
-    fsmr: obj.fsmr ?? "",
-    remarks: obj.remarks ?? "",
-    orNumber: obj.orNumber ?? "",
-    orAmount: obj.orAmount ?? "",
-    orDate: obj.orDate ?? "",
+    appno: obj.appno ?? obj.APPLICATION_NO ?? "",
+    fsicAppNo: obj.fsicAppNo ?? obj.FSIC_APP_NO ?? obj.FSIC_NUMBER ?? "",
+    natureOfInspection: obj.natureOfInspection ?? obj.NATURE_OF_INSPECTION ?? "",
+    ownerName: obj.ownerName ?? obj.OWNERS_NAME ?? "",
+    establishmentName: obj.establishmentName ?? obj.ESTABLISHMENT_NAME ?? "",
+    businessAddress: obj.businessAddress ?? obj.BUSSINESS_ADDRESS ?? obj.ADDRESS ?? "",
+    contactNumber: obj.contactNumber ?? obj.CONTACT_NUMBER ?? "",
+    dateInspected: obj.dateInspected ?? obj.DATE_INSPECTED ?? "",
+
+    ioNumber: obj.ioNumber ?? obj.IO_NUMBER ?? "",
+    ioDate: obj.ioDate ?? obj.IO_DATE ?? "",
+
+    nfsiNumber: obj.nfsiNumber ?? obj.NFSI_NUMBER ?? "",
+    nfsiDate: obj.nfsiDate ?? obj.NFSI_DATE ?? "",
+
+    fsicValidity: obj.fsicValidity ?? obj.FSIC_VALIDITY ?? "",
+    defects: obj.defects ?? obj.DEFECTS ?? "",
+    inspectors: obj.inspectors ?? obj.INSPECTORS ?? "",
+    occupancyType: obj.occupancyType ?? obj.OCCUPANCY_TYPE ?? "",
+    buildingDesc: obj.buildingDesc ?? obj.BUILDING_DESC ?? obj.BLDG_DESCRIPTION ?? "",
+    floorArea: obj.floorArea ?? obj.FLOOR_AREA ?? "",
+    buildingHeight: obj.buildingHeight ?? obj.BUILDING_HEIGHT ?? "",
+    storeyCount: obj.storeyCount ?? obj.STOREY_COUNT ?? "",
+    highRise: obj.highRise ?? obj.HIGH_RISE ?? "",
+    fsmr: obj.fsmr ?? obj.FSMR ?? "",
+    remarks: obj.remarks ?? obj.REMARKS ?? "",
+
+    orNumber: obj.orNumber ?? obj.OR_NUMBER ?? "",
+    orAmount: obj.orAmount ?? obj.OR_AMOUNT ?? "",
+    orDate: obj.orDate ?? obj.OR_DATE ?? "",
+  };
+};
+
+// ✅ Documents fields (store what templates need for IO/NFSI/Reinspection too)
+const pickAllowedDocumentFields = (obj = {}) => {
+  return {
+    fsicAppNo: obj.fsicAppNo ?? obj.FSIC_APP_NO ?? obj.FSIC_NUMBER ?? "",
+    ownerName: obj.ownerName ?? obj.OWNERS_NAME ?? "",
+    establishmentName: obj.establishmentName ?? obj.ESTABLISHMENT_NAME ?? "",
+
+    businessAddress: obj.businessAddress ?? obj.BUSSINESS_ADDRESS ?? obj.ADDRESS ?? "",
+    contactNumber: obj.contactNumber ?? obj.CONTACT_NUMBER ?? "",
+
+    ioNumber: obj.ioNumber ?? obj.IO_NUMBER ?? "",
+    ioDate: obj.ioDate ?? obj.IO_DATE ?? "",
+
+    nfsiNumber: obj.nfsiNumber ?? obj.NFSI_NUMBER ?? "",
+    nfsiDate: obj.nfsiDate ?? obj.NFSI_DATE ?? "",
+
+    inspectors: obj.inspectors ?? obj.INSPECTORS ?? "",
+    teamLeader: obj.teamLeader ?? obj.TEAM_LEADER ?? "",
+
+    // signatures
+    chiefName: obj.chiefName ?? obj.CHIEF ?? "",
+    marshalName: obj.marshalName ?? obj.MARSHAL ?? "",
   };
 };
 
 const buildRenewedRecord = ({ entityKey, updatedRecord }) => {
-  // ✅ teamLeader only appears on renewed record
   const base = pickAllowedRecordFields(updatedRecord || {});
   const now = new Date().toISOString();
 
@@ -171,7 +199,6 @@ app.post("/records", (req, res) => {
       id: Date.now(),
       createdAt: new Date().toISOString(),
       ...pickAllowedRecordFields(req.body || {}),
-      // keep entityKey if passed; else generate from FSIC
       entityKey: req.body?.entityKey,
     };
     newRecord = ensureEntityKey(newRecord);
@@ -186,7 +213,6 @@ app.post("/records", (req, res) => {
   }
 });
 
-// DELETE current record
 app.delete("/records/:id", (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -243,7 +269,6 @@ app.get("/archive/:month", (req, res) => {
   res.json(list);
 });
 
-// DELETE archived record by month
 app.delete("/archive/:month/:id", (req, res) => {
   try {
     const month = String(req.params.month || "");
@@ -276,7 +301,7 @@ app.post("/documents", (req, res) => {
     const newDoc = {
       id: Date.now(),
       createdAt: new Date().toISOString(),
-      ...req.body,
+      ...pickAllowedDocumentFields(req.body || {}),
     };
     docs.push(newDoc);
     writeJSON(DOCUMENTS_FILE, docs);
@@ -287,7 +312,28 @@ app.post("/documents", (req, res) => {
   }
 });
 
-// DELETE document
+app.put("/documents/:id", (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const docs = readJSON(DOCUMENTS_FILE) || [];
+    const idx = docs.findIndex((d) => Number(d.id) === id);
+
+    if (idx === -1) return res.status(404).json({ success: false, message: "Document not found" });
+
+    docs[idx] = {
+      ...docs[idx],
+      ...pickAllowedDocumentFields({ ...docs[idx], ...(req.body || {}) }),
+      updatedAt: new Date().toISOString(),
+    };
+
+    writeJSON(DOCUMENTS_FILE, docs);
+    return res.json({ success: true, data: docs[idx] });
+  } catch (e) {
+    console.log(e);
+    return res.status(500).json({ success: false, message: "Update document failed" });
+  }
+});
+
 app.delete("/documents/:id", (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -305,8 +351,6 @@ app.delete("/documents/:id", (req, res) => {
 // -----------------------------
 // RENEW (HISTORY)
 // -----------------------------
-
-// Get latest renewed record for this entityKey
 app.get("/records/renewed/:entityKey", (req, res) => {
   try {
     const ek = normalizeEntityKey(decodeURIComponent(req.params.entityKey || ""));
@@ -320,8 +364,6 @@ app.get("/records/renewed/:entityKey", (req, res) => {
   }
 });
 
-// ✅ LIST ALL RENEWED (for Renewed page)
-// returns array of renewed RECORDS (h.data)
 app.get("/records/renewed", (req, res) => {
   try {
     const history = readJSON(HISTORY_FILE) || [];
@@ -346,25 +388,6 @@ app.get("/records/renewed", (req, res) => {
   }
 });
 
-// Get all renewed logs (raw) if you need for dashboard analytics
-app.get("/records/renewed-all", (req, res) => {
-  try {
-    const history = readJSON(HISTORY_FILE) || [];
-    const renewed = history
-      .filter((h) => String(h.action || "").toUpperCase() === "RENEWED")
-      .map((h) => ({
-        entityKey: h.entityKey,
-        changedAt: h.changedAt,
-        data: ensureEntityKey(h.data),
-      }));
-    return res.json({ success: true, renewed });
-  } catch (e) {
-    console.log(e);
-    return res.status(500).json({ success: false, renewed: [] });
-  }
-});
-
-// Delete a renewed record log by record id (removes matching RENEWED entries)
 app.delete("/records/renewed/:id", (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -385,8 +408,6 @@ app.delete("/records/renewed/:id", (req, res) => {
   }
 });
 
-// Renew endpoint
-// ✅ IMPORTANT: DOES NOT add to current table unless you want it.
 app.post("/records/renew", (req, res) => {
   try {
     let { entityKey, source, oldRecord, updatedRecord } = req.body;
@@ -409,7 +430,6 @@ app.post("/records/renew", (req, res) => {
     const now = new Date().toISOString();
     const history = readJSON(HISTORY_FILE) || [];
 
-    // log PREVIOUS snapshot
     history.push({
       entityKey,
       source: source || "Unknown",
@@ -418,10 +438,8 @@ app.post("/records/renew", (req, res) => {
       data: oldRecord,
     });
 
-    // build RENEWED record
     const newRecord = buildRenewedRecord({ entityKey, updatedRecord });
 
-    // log RENEWED
     history.push({
       entityKey,
       source: "Renewed",
@@ -440,20 +458,16 @@ app.post("/records/renew", (req, res) => {
 });
 
 // -----------------------------
-// EXPORT endpoint (for archive month)
-// returns JSON array where each record is replaced by latest renewed (if exists)
+// EXPORT
 // -----------------------------
 app.get("/records/export", (req, res) => {
   try {
     const month = normalize(req.query.month);
-    if (!month) {
-      return res.status(400).json({ success: false, message: "Missing month" });
-    }
+    if (!month) return res.status(400).json({ success: false, message: "Missing month" });
 
     const archive = readJSON(ARCHIVE_FILE) || {};
     const list = (archive[month] || []).map(ensureEntityKey);
 
-    // replace by latest renewed if exists
     const replaced = list.map((r) => {
       const ek = normalizeEntityKey(r.entityKey);
       const latest = ek ? getLatestRenewedByEntityKey(ek) : null;
@@ -468,11 +482,11 @@ app.get("/records/export", (req, res) => {
 });
 
 // -----------------------------
-// DATA MANAGER endpoint (list combined items)
+// DATA MANAGER
 // -----------------------------
 app.get("/manager/items", (req, res) => {
   try {
-    const scope = normalize(req.query.scope || "all"); // all|current|archive|documents|renewed
+    const scope = normalize(req.query.scope || "all");
     const month = normalize(req.query.month || "");
 
     const items = [];
@@ -490,7 +504,6 @@ app.get("/manager/items", (req, res) => {
       });
     };
 
-    // current
     if (scope === "all" || scope === "current") {
       const current = (readJSON(DATA_FILE) || []).map(ensureEntityKey);
       current.forEach((r) =>
@@ -505,7 +518,6 @@ app.get("/manager/items", (req, res) => {
       );
     }
 
-    // archive
     if (scope === "all" || scope === "archive") {
       const archive = readJSON(ARCHIVE_FILE) || {};
       const months = month ? [month] : Object.keys(archive);
@@ -525,7 +537,6 @@ app.get("/manager/items", (req, res) => {
       });
     }
 
-    // documents
     if (scope === "all" || scope === "documents") {
       const docs = readJSON(DOCUMENTS_FILE) || [];
       docs.forEach((d) =>
@@ -539,7 +550,6 @@ app.get("/manager/items", (req, res) => {
       );
     }
 
-    // renewed logs
     if (scope === "all" || scope === "renewed") {
       const history = readJSON(HISTORY_FILE) || [];
       history
@@ -557,7 +567,6 @@ app.get("/manager/items", (req, res) => {
         });
     }
 
-    // newest first
     items.sort((a, b) =>
       String(b.changedAt || b.createdAt).localeCompare(String(a.changedAt || a.createdAt))
     );
@@ -612,7 +621,6 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
       .send("LibreOffice not found. Install LibreOffice or fix SOFFICE_PATH.");
   }
 
-  // ✅ unique per request
   const stamp = `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
   const outDir = path.join(os.tmpdir(), "bfp_pdf_out");
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
@@ -622,38 +630,58 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
   try {
     const content = fs.readFileSync(templatePath, "binary");
     const zip = new PizZip(content);
-    const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
 
-    doc.render({
-      FSIC_NUMBER: record.fsicAppNo || "",
-      DATE_INSPECTED: record.dateInspected || "",
-      NAME_OF_ESTABLISHMENT: record.establishmentName || "",
-      NAME_OF_OWNER: record.ownerName || "",
-      ADDRESS: record.businessAddress || "",
-      FLOOR_AREA: record.floorArea || "",
-      BLDG_DESCRIPTION: record.buildingDesc || "",
-      FSIC_VALIDITY: record.fsicValidity || "",
-      OR_NUMBER: record.orNumber || "",
-      OR_DATE: record.orDate || "",
-      OR_AMOUNT: record.orAmount || "",
-
-      IO_NUMBER: record.ioNumber || "",
-      IO_DATE: record.ioDate ? String(record.ioDate) : "",
-      TAXPAYER: record.ownerName || "",
-      TRADE_NAME: record.establishmentName || "",
-      CONTACT_: record.contactNumber || "",
-      NFSI_NUMBER: record.nfsiNumber || "",
-      NFSI_DATE: record.nfsiDate || "",
-      OWNER: record.ownerName || "",
-      INSPECTORS: record.inspectors || "",
-      TEAM_LEADER: record.teamLeader || "",
-      DATE: new Date().toLocaleDateString(),
+    const doc = new Docxtemplater(zip, {
+      paragraphLoop: true,
+      linebreaks: true,
+      // ✅ if tag not provided, return empty string (so it won't crash)
+      nullGetter: () => "",
     });
+
+    // ✅ Build a single "view" object with ALL tags used by your templates:
+    // FSIC templates use {CHIEF} {MARSHAL} etc. 
+    // IO template uses {IO_NUMBER} {IO_DATE} {TAXPAYER} ... :contentReference[oaicite:3]{index=3}
+    // Reinspection template uses same tags :contentReference[oaicite:4]{index=4}
+    // NFSI uses {NFSI_NUMBER} {NFSI_DATE} {MARSHAL} :contentReference[oaicite:5]{index=5}
+
+    const view = {
+      FSIC_NUMBER: record.FSIC_NUMBER || record.FSIC_APP_NO || record.fsicAppNo || "",
+      DATE_INSPECTED: record.DATE_INSPECTED || record.dateInspected || "",
+      NAME_OF_ESTABLISHMENT:
+      record.NAME_OF_ESTABLISHMENT || record.ESTABLISHMENT_NAME || record.establishmentName || "",
+      NAME_OF_OWNER: record.NAME_OF_OWNER || record.OWNERS_NAME || record.ownerName || "",
+      ADDRESS: record.ADDRESS || record.BUSSINESS_ADDRESS || record.businessAddress || "",
+      FLOOR_AREA: record.FLOOR_AREA || record.floorArea || "",
+      BLDG_DESCRIPTION: record.BLDG_DESCRIPTION || record.BUILDING_DESC || record.buildingDesc || "",
+      FSIC_VALIDITY: record.FSIC_VALIDITY || record.fsicValidity || "",
+      OR_NUMBER: record.OR_NUMBER || record.orNumber || "",
+      OR_DATE: record.OR_DATE || record.orDate || "",
+      OR_AMOUNT: record.OR_AMOUNT || record.orAmount || "",
+
+      IO_NUMBER: record.IO_NUMBER || record.ioNumber || "",
+      IO_DATE: record.IO_DATE || record.ioDate || "",
+      TAXPAYER: record.TAXPAYER || record.OWNERS_NAME || record.ownerName || "",
+      TRADE_NAME: record.TRADE_NAME || record.ESTABLISHMENT_NAME || record.establishmentName || "",
+      CONTACT_: record.CONTACT_ || record.CONTACT_NUMBER || record.contactNumber || "",
+
+      NFSI_NUMBER: record.NFSI_NUMBER || record.nfsiNumber || "",
+      NFSI_DATE: record.NFSI_DATE || record.nfsiDate || "",
+
+      OWNER: record.OWNER || record.OWNERS_NAME || record.ownerName || "",
+      INSPECTORS: record.INSPECTORS || record.inspectors || "",
+      TEAM_LEADER: record.TEAM_LEADER || record.teamLeader || "",
+
+      DATE: new Date().toLocaleDateString(),
+
+      CHIEF: record.CHIEF || record.chiefName || "",
+      MARSHAL: record.MARSHAL || record.marshalName || "",
+    };
+
+    doc.render(view);
 
     const buf = doc.getZip().generate({ type: "nodebuffer" });
     fs.writeFileSync(outputDocx, buf);
 
-    // ✅ LO headless convert-to-pdf
     const command = `"${soffice}" --headless --nologo --nolockcheck --norestore --convert-to pdf "${outputDocx}" --outdir "${outDir}"`;
 
     exec(command, (err, stdout, stderr) => {
@@ -661,9 +689,7 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
         console.log("LibreOffice ERROR:", err);
         console.log("stdout:", stdout);
         console.log("stderr:", stderr);
-        try {
-          if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
-        } catch {}
+        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
         return res.status(500).send("PDF conversion failed. Check backend logs.");
       }
 
@@ -672,27 +698,18 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
       if (!fs.existsSync(expectedPdf)) {
         console.log("PDF not found after conversion.");
         console.log("expectedPdf:", expectedPdf);
-        try {
-          if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
-        } catch {}
+        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
         return res.status(500).send("PDF file not produced. Check LibreOffice conversion.");
       }
 
       res.download(expectedPdf, () => {
-        // cleanup
-        try {
-          if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
-        } catch {}
-        try {
-          if (fs.existsSync(expectedPdf)) fs.unlinkSync(expectedPdf);
-        } catch {}
+        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
+        try { if (fs.existsSync(expectedPdf)) fs.unlinkSync(expectedPdf); } catch {}
       });
     });
   } catch (e) {
     console.log("PDF generation failed:", e);
-    try {
-      if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
-    } catch {}
+    try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
     return res.status(500).send("PDF generation failed (docxtemplater/render). Check logs.");
   }
 };
