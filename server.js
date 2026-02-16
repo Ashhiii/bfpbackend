@@ -121,7 +121,7 @@ const pickAllowedRecordFields = (obj = {}) => {
     orNumber: obj.orNumber ?? obj.OR_NUMBER ?? "",
     orAmount: obj.orAmount ?? obj.OR_AMOUNT ?? "",
     orDate: obj.orDate ?? obj.OR_DATE ?? "",
-    
+
     chiefName: obj.chiefName ?? obj.CHIEF ?? "",
     marshalName: obj.marshalName ?? obj.MARSHAL ?? "",
   };
@@ -366,6 +366,42 @@ app.get("/records/renewed/:entityKey", (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to load renewed record" });
   }
 });
+
+// ✅ UPDATE RECORD (EDIT CURRENT)
+app.put("/records/:id", (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    const records = (readJSON(DATA_FILE) || []).map(ensureEntityKey);
+    const idx = records.findIndex((r) => Number(r.id) === id);
+
+    if (idx === -1) {
+      return res.status(404).json({ success: false, message: "Record not found in current records" });
+    }
+
+    const allowed = pickAllowedRecordFields(req.body || {});
+    const teamLeader = req.body?.teamLeader ?? records[idx]?.teamLeader ?? "";
+
+    const updated = ensureEntityKey({
+      ...records[idx],
+      ...allowed,
+      teamLeader,
+      id: records[idx].id,
+      entityKey: records[idx].entityKey,
+      createdAt: records[idx].createdAt,
+      updatedAt: new Date().toISOString(),
+    });
+
+    records[idx] = updated;
+    writeJSON(DATA_FILE, records);
+
+    return res.json({ success: true, data: updated });
+  } catch (e) {
+    console.log("PUT /records/:id error:", e);
+    return res.status(500).json({ success: false, message: "Update record failed" });
+  }
+});
+
 
 app.get("/records/renewed", (req, res) => {
   try {
@@ -753,6 +789,8 @@ app.get("/documents/:id/:docType/pdf", (req, res) => {
 
   generatePDF(doc, templateFile, `doc-${req.params.docType}-${doc.id}`, res);
 });
+
+
 
 // -----------------------------
 // START
