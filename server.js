@@ -2,12 +2,14 @@
 // ✅ Current + Archive + Documents
 // ✅ Renew logs (history.json) + get latest renewed per entityKey
 // ✅ Data Manager endpoints (list + delete)
-// ✅ Export endpoint (returns JSON list with latest renewed per entityKey for a month)
+// ✅ Export endpoint
 // ✅ PDF generation endpoints (LibreOffice in Docker)
 // ✅ Excel import endpoints:
 //    - POST /import/records
 //    - POST /import/documents
 // ✅ keeps old: POST /import/excel (records import) for backward compatibility
+//
+// ✅ FIX: All :id routes now use STRING id comparison (works for UUID + Date.now)
 
 import express from "express";
 import cors from "cors";
@@ -19,7 +21,6 @@ import { exec } from "child_process";
 import { fileURLToPath } from "url";
 import os from "os";
 
-// ✅ NEW
 import multer from "multer";
 import xlsx from "xlsx";
 import crypto from "crypto";
@@ -45,7 +46,6 @@ app.use(
 );
 app.use(express.json({ limit: "10mb" }));
 
-// ✅ NEW (multer memory storage)
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 }, // 15MB
@@ -54,20 +54,17 @@ const upload = multer({
 // -----------------------------
 // FILES
 // -----------------------------
-const DATA_FILE = path.join(__dirname, "records.json"); // current records (array)
-const ARCHIVE_FILE = path.join(__dirname, "archive.json"); // { "YYYY-MM": [records...] }
-const DOCUMENTS_FILE = path.join(__dirname, "documents.json"); // documents (array)
-const HISTORY_FILE = path.join(__dirname, "history.json"); // renew logs (array)
+const DATA_FILE = path.join(__dirname, "records.json");
+const ARCHIVE_FILE = path.join(__dirname, "archive.json");
+const DOCUMENTS_FILE = path.join(__dirname, "documents.json");
+const HISTORY_FILE = path.join(__dirname, "history.json");
 
 // -----------------------------
 // HELPERS
 // -----------------------------
 const ensureFile = (file, defaultData) => {
-  if (!fs.existsSync(file)) {
-    fs.writeFileSync(file, JSON.stringify(defaultData, null, 2));
-  }
+  if (!fs.existsSync(file)) fs.writeFileSync(file, JSON.stringify(defaultData, null, 2));
 };
-
 ensureFile(DATA_FILE, []);
 ensureFile(ARCHIVE_FILE, {});
 ensureFile(DOCUMENTS_FILE, []);
@@ -77,6 +74,7 @@ const readJSON = (file) => JSON.parse(fs.readFileSync(file, "utf-8"));
 const writeJSON = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2));
 
 const normalize = (v) => String(v ?? "").trim();
+const sid = (v) => String(v ?? ""); // ✅ string id helper
 
 const ensureEntityKey = (r) => {
   if (!r) return r;
@@ -88,22 +86,22 @@ const ensureEntityKey = (r) => {
 const normalizeEntityKey = (entityKey) => normalize(entityKey);
 
 const findRecordById = (id) => {
+  const target = sid(id);
+
   // 1) current
-  let record = (readJSON(DATA_FILE) || []).find((r) => String(r.id) == String(id));
+  let record = (readJSON(DATA_FILE) || []).find((r) => sid(r.id) === target);
   if (record) return ensureEntityKey(record);
 
   // 2) archive
   const archive = readJSON(ARCHIVE_FILE) || {};
   for (const month of Object.keys(archive)) {
-    record = (archive[month] || []).find((r) => String(r.id) == String(id));
+    record = (archive[month] || []).find((r) => sid(r.id) === target);
     if (record) return ensureEntityKey(record);
   }
   return null;
 };
 
-// ✅ accepts BOTH:
-// - old ALL CAPS (FSIC_APP_NO, OWNERS_NAME...)
-// - new camelCase (fsicAppNo, ownerName...)
+// record fields
 const pickAllowedRecordFields = (obj = {}) => {
   return {
     appno: obj.appno ?? obj.APPLICATION_NO ?? "",
@@ -142,7 +140,7 @@ const pickAllowedRecordFields = (obj = {}) => {
   };
 };
 
-// ✅ Documents fields (store what templates need for IO/NFSI/Reinspection too)
+// document fields
 const pickAllowedDocumentFields = (obj = {}) => {
   return {
     fsicAppNo: obj.fsicAppNo ?? obj.FSIC_APP_NO ?? obj.FSIC_NUMBER ?? "",
@@ -161,7 +159,6 @@ const pickAllowedDocumentFields = (obj = {}) => {
     inspectors: obj.inspectors ?? obj.INSPECTORS ?? "",
     teamLeader: obj.teamLeader ?? obj.TEAM_LEADER ?? "",
 
-    // signatures
     chiefName: obj.chiefName ?? obj.CHIEF ?? "",
     marshalName: obj.marshalName ?? obj.MARSHAL ?? "",
   };
@@ -172,7 +169,7 @@ const buildRenewedRecord = ({ entityKey, updatedRecord }) => {
   const now = new Date().toISOString();
 
   const newRecord = ensureEntityKey({
-    id: Date.now(),
+    id: Date.now(), // renewed record id can stay number (still works now)
     entityKey,
     ...base,
     teamLeader: updatedRecord?.teamLeader || "",
@@ -202,7 +199,7 @@ const getLatestRenewedByEntityKey = (entityKey) => {
 };
 
 // -----------------------------
-// ✅ EXCEL IMPORT HELPERS
+// EXCEL IMPORT HELPERS
 // -----------------------------
 const pickAny = (obj, keys = []) => {
   for (const k of keys) {
@@ -212,7 +209,6 @@ const pickAny = (obj, keys = []) => {
   return "";
 };
 
-// normalize excel header keys: remove spaces, dashes, underscores, lowercase
 const normHeader = (s) =>
   String(s ?? "")
     .toLowerCase()
@@ -228,10 +224,8 @@ const makeId = () => {
   }
 };
 
-// Excel date can be serial number. Convert if needed.
 const excelDateToISO = (v) => {
   if (typeof v === "string") return v;
-
   if (typeof v === "number") {
     const dt = new Date(Math.round((v - 25569) * 86400 * 1000));
     if (!isNaN(dt.getTime())) {
@@ -244,7 +238,6 @@ const excelDateToISO = (v) => {
   return String(v ?? "");
 };
 
-// ✅ map one Excel row to RECORD
 const mapExcelRowToRecord = (row = {}) => {
   const headerMap = {};
   for (const k of Object.keys(row)) headerMap[normHeader(k)] = row[k];
@@ -297,7 +290,6 @@ const mapExcelRowToRecord = (row = {}) => {
   return ensureEntityKey(rec);
 };
 
-// ✅ map one Excel row to DOCUMENT
 const mapExcelRowToDocument = (row = {}) => {
   const headerMap = {};
   for (const k of Object.keys(row)) headerMap[normHeader(k)] = row[k];
@@ -334,7 +326,6 @@ const mapExcelRowToDocument = (row = {}) => {
   return doc;
 };
 
-// helper: read first sheet rows
 const readExcelRows = (req) => {
   if (!req.file) return { error: "No file uploaded." };
 
@@ -349,17 +340,14 @@ const readExcelRows = (req) => {
 
   const ws = wb.Sheets[sheetName];
   const rows = xlsx.utils.sheet_to_json(ws, { defval: "" });
-
   if (!rows.length) return { error: "Excel sheet is empty." };
 
   return { rows, sheetName };
 };
 
 // -----------------------------
-// ✅ IMPORT EXCEL ENDPOINTS
+// IMPORT EXCEL ENDPOINTS
 // -----------------------------
-
-// ✅ Import to RECORDS
 app.post("/import/records", upload.single("file"), (req, res) => {
   try {
     const { rows, sheetName, error } = readExcelRows(req);
@@ -367,25 +355,17 @@ app.post("/import/records", upload.single("file"), (req, res) => {
 
     const current = (readJSON(DATA_FILE) || []).map(ensureEntityKey);
     const mapped = rows.map(mapExcelRowToRecord);
-
-    // require fsicAppNo + ownerName
     const toAdd = mapped.filter((r) => normalize(r.fsicAppNo) && normalize(r.ownerName));
 
     writeJSON(DATA_FILE, [...current, ...toAdd]);
 
-    return res.json({
-      success: true,
-      imported: toAdd.length,
-      skipped: mapped.length - toAdd.length,
-      sheet: sheetName,
-    });
+    return res.json({ success: true, imported: toAdd.length, skipped: mapped.length - toAdd.length, sheet: sheetName });
   } catch (e) {
     console.error("POST /import/records error:", e);
     return res.status(500).json({ success: false, message: "Failed to import records Excel." });
   }
 });
 
-// ✅ Import to DOCUMENTS
 app.post("/import/documents", upload.single("file"), (req, res) => {
   try {
     const { rows, sheetName, error } = readExcelRows(req);
@@ -393,27 +373,18 @@ app.post("/import/documents", upload.single("file"), (req, res) => {
 
     const current = readJSON(DOCUMENTS_FILE) || [];
     const mapped = rows.map(mapExcelRowToDocument);
-
-    // require fsicAppNo + establishmentName (or ownerName)
-    const toAdd = mapped.filter(
-      (d) => normalize(d.fsicAppNo) && (normalize(d.establishmentName) || normalize(d.ownerName))
-    );
+    const toAdd = mapped.filter((d) => normalize(d.fsicAppNo) && (normalize(d.establishmentName) || normalize(d.ownerName)));
 
     writeJSON(DOCUMENTS_FILE, [...current, ...toAdd]);
 
-    return res.json({
-      success: true,
-      imported: toAdd.length,
-      skipped: mapped.length - toAdd.length,
-      sheet: sheetName,
-    });
+    return res.json({ success: true, imported: toAdd.length, skipped: mapped.length - toAdd.length, sheet: sheetName });
   } catch (e) {
     console.error("POST /import/documents error:", e);
     return res.status(500).json({ success: false, message: "Failed to import documents Excel." });
   }
 });
 
-// ✅ OLD endpoint kept (imports to RECORDS) — so your old UI still works if used
+// old endpoint
 app.post("/import/excel", upload.single("file"), (req, res) => {
   try {
     const { rows, sheetName, error } = readExcelRows(req);
@@ -421,16 +392,11 @@ app.post("/import/excel", upload.single("file"), (req, res) => {
 
     const current = (readJSON(DATA_FILE) || []).map(ensureEntityKey);
     const mapped = rows.map(mapExcelRowToRecord);
-
     const toAdd = mapped.filter((r) => normalize(r.fsicAppNo) && normalize(r.ownerName));
+
     writeJSON(DATA_FILE, [...current, ...toAdd]);
 
-    return res.json({
-      success: true,
-      imported: toAdd.length,
-      skipped: mapped.length - toAdd.length,
-      sheet: sheetName,
-    });
+    return res.json({ success: true, imported: toAdd.length, skipped: mapped.length - toAdd.length, sheet: sheetName });
   } catch (e) {
     console.error("POST /import/excel error:", e);
     return res.status(500).json({ success: false, message: "Failed to import Excel." });
@@ -467,17 +433,53 @@ app.post("/records", (req, res) => {
   }
 });
 
+// ✅ FIXED DELETE (string compare)
 app.delete("/records/:id", (req, res) => {
   try {
-    const id = Number(req.params.id);
+    const id = sid(req.params.id);
     const list = readJSON(DATA_FILE) || [];
     const before = list.length;
-    const after = list.filter((r) => String(r.id) !== String(id));
+    const after = list.filter((r) => sid(r.id) !== id);
     writeJSON(DATA_FILE, after);
     return res.json({ success: true, deleted: before - after.length });
   } catch (e) {
     console.log(e);
     return res.status(500).json({ success: false, message: "Delete failed" });
+  }
+});
+
+// ✅ FIXED UPDATE (string compare)
+app.put("/records/:id", (req, res) => {
+  try {
+    const id = sid(req.params.id);
+
+    const records = (readJSON(DATA_FILE) || []).map(ensureEntityKey);
+    const idx = records.findIndex((r) => sid(r.id) === id);
+
+    if (idx === -1) {
+      return res.status(404).json({ success: false, message: "Record not found in current records" });
+    }
+
+    const allowed = pickAllowedRecordFields(req.body || {});
+    const teamLeader = req.body?.teamLeader ?? records[idx]?.teamLeader ?? "";
+
+    const updated = ensureEntityKey({
+      ...records[idx],
+      ...allowed,
+      teamLeader,
+      id: records[idx].id,
+      entityKey: records[idx].entityKey,
+      createdAt: records[idx].createdAt,
+      updatedAt: new Date().toISOString(),
+    });
+
+    records[idx] = updated;
+    writeJSON(DATA_FILE, records);
+
+    return res.json({ success: true, data: updated });
+  } catch (e) {
+    console.log("PUT /records/:id error:", e);
+    return res.status(500).json({ success: false, message: "Update record failed" });
   }
 });
 
@@ -487,9 +489,7 @@ app.delete("/records/:id", (req, res) => {
 app.post("/records/close-month", (req, res) => {
   try {
     const records = (readJSON(DATA_FILE) || []).map(ensureEntityKey);
-    if (records.length === 0) {
-      return res.json({ success: false, message: "No records" });
-    }
+    if (records.length === 0) return res.json({ success: false, message: "No records" });
 
     const now = new Date();
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -523,16 +523,17 @@ app.get("/archive/:month", (req, res) => {
   res.json(list);
 });
 
+// ✅ FIXED archive delete (string compare)
 app.delete("/archive/:month/:id", (req, res) => {
   try {
     const month = String(req.params.month || "");
-    const id = String(req.params.id);
+    const id = sid(req.params.id);
 
     const archive = readJSON(ARCHIVE_FILE) || {};
     const list = archive[month] || [];
     const before = list.length;
 
-    archive[month] = list.filter((r) => String(r.id) !== String(id));
+    archive[month] = list.filter((r) => sid(r.id) !== id);
     writeJSON(ARCHIVE_FILE, archive);
 
     return res.json({ success: true, deleted: before - (archive[month] || []).length });
@@ -566,11 +567,12 @@ app.post("/documents", (req, res) => {
   }
 });
 
+// ✅ FIXED documents update (string compare)
 app.put("/documents/:id", (req, res) => {
   try {
-    const id = Number(req.params.id);
+    const id = sid(req.params.id);
     const docs = readJSON(DOCUMENTS_FILE) || [];
-    const idx = docs.findIndex((d) => Number(d.id) === id);
+    const idx = docs.findIndex((d) => sid(d.id) === id);
 
     if (idx === -1) return res.status(404).json({ success: false, message: "Document not found" });
 
@@ -588,12 +590,13 @@ app.put("/documents/:id", (req, res) => {
   }
 });
 
+// ✅ FIXED documents delete (string compare)
 app.delete("/documents/:id", (req, res) => {
   try {
-    const id = Number(req.params.id);
+    const id = sid(req.params.id);
     const docs = readJSON(DOCUMENTS_FILE) || [];
     const before = docs.length;
-    const after = docs.filter((d) => Number(d.id) !== id);
+    const after = docs.filter((d) => sid(d.id) !== id);
     writeJSON(DOCUMENTS_FILE, after);
     return res.json({ success: true, deleted: before - after.length });
   } catch (e) {
@@ -609,47 +612,11 @@ app.get("/records/renewed/:entityKey", (req, res) => {
   try {
     const ek = normalizeEntityKey(decodeURIComponent(req.params.entityKey || ""));
     if (!ek) return res.json({ success: true, record: null });
-
     const latest = getLatestRenewedByEntityKey(ek);
     return res.json({ success: true, record: latest || null });
   } catch (e) {
     console.log(e);
     return res.status(500).json({ success: false, message: "Failed to load renewed record" });
-  }
-});
-
-// ✅ UPDATE RECORD (EDIT CURRENT)
-app.put("/records/:id", (req, res) => {
-  try {
-    const id = Number(req.params.id);
-
-    const records = (readJSON(DATA_FILE) || []).map(ensureEntityKey);
-    const idx = records.findIndex((r) => Number(r.id) === id);
-
-    if (idx === -1) {
-      return res.status(404).json({ success: false, message: "Record not found in current records" });
-    }
-
-    const allowed = pickAllowedRecordFields(req.body || {});
-    const teamLeader = req.body?.teamLeader ?? records[idx]?.teamLeader ?? "";
-
-    const updated = ensureEntityKey({
-      ...records[idx],
-      ...allowed,
-      teamLeader,
-      id: records[idx].id,
-      entityKey: records[idx].entityKey,
-      createdAt: records[idx].createdAt,
-      updatedAt: new Date().toISOString(),
-    });
-
-    records[idx] = updated;
-    writeJSON(DATA_FILE, records);
-
-    return res.json({ success: true, data: updated });
-  } catch (e) {
-    console.log("PUT /records/:id error:", e);
-    return res.status(500).json({ success: false, message: "Update record failed" });
   }
 });
 
@@ -677,16 +644,17 @@ app.get("/records/renewed", (req, res) => {
   }
 });
 
+// ✅ FIXED renewed delete (string compare)
 app.delete("/records/renewed/:id", (req, res) => {
   try {
-    const id = Number(req.params.id);
+    const id = sid(req.params.id);
     const history = readJSON(HISTORY_FILE) || [];
     const before = history.length;
 
     const after = history.filter((h) => {
       if (String(h.action || "").toUpperCase() !== "RENEWED") return true;
       const rec = h.data || {};
-      return String(rec.id) !== String(id);
+      return sid(rec.id) !== id;
     });
 
     writeJSON(HISTORY_FILE, after);
@@ -710,32 +678,17 @@ app.post("/records/renew", (req, res) => {
       normalizeEntityKey(updatedRecord?.entityKey);
 
     if (!entityKey || !oldRecord || !updatedRecord) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing payload (entityKey/oldRecord/updatedRecord)",
-      });
+      return res.status(400).json({ success: false, message: "Missing payload (entityKey/oldRecord/updatedRecord)" });
     }
 
     const now = new Date().toISOString();
     const history = readJSON(HISTORY_FILE) || [];
 
-    history.push({
-      entityKey,
-      source: source || "Unknown",
-      changedAt: now,
-      action: "PREVIOUS",
-      data: oldRecord,
-    });
+    history.push({ entityKey, source: source || "Unknown", changedAt: now, action: "PREVIOUS", data: oldRecord });
 
     const newRecord = buildRenewedRecord({ entityKey, updatedRecord });
 
-    history.push({
-      entityKey,
-      source: "Renewed",
-      changedAt: now,
-      action: "RENEWED",
-      data: newRecord,
-    });
+    history.push({ entityKey, source: "Renewed", changedAt: now, action: "RENEWED", data: newRecord });
 
     writeJSON(HISTORY_FILE, history);
 
@@ -796,14 +749,7 @@ app.get("/manager/items", (req, res) => {
     if (scope === "all" || scope === "current") {
       const current = (readJSON(DATA_FILE) || []).map(ensureEntityKey);
       current.forEach((r) =>
-        pushItem({
-          kind: "current",
-          id: r.id,
-          source: "Current",
-          createdAt: r.createdAt,
-          entityKey: r.entityKey,
-          data: r,
-        })
+        pushItem({ kind: "current", id: r.id, source: "Current", createdAt: r.createdAt, entityKey: r.entityKey, data: r })
       );
     }
 
@@ -813,30 +759,14 @@ app.get("/manager/items", (req, res) => {
 
       months.forEach((m) => {
         (archive[m] || []).map(ensureEntityKey).forEach((r) =>
-          pushItem({
-            kind: "archive",
-            id: r.id,
-            source: `Archive:${m}`,
-            createdAt: r.createdAt,
-            entityKey: r.entityKey,
-            data: r,
-            month: m,
-          })
+          pushItem({ kind: "archive", id: r.id, source: `Archive:${m}`, createdAt: r.createdAt, entityKey: r.entityKey, data: r, month: m })
         );
       });
     }
 
     if (scope === "all" || scope === "documents") {
       const docs = readJSON(DOCUMENTS_FILE) || [];
-      docs.forEach((d) =>
-        pushItem({
-          kind: "documents",
-          id: d.id,
-          source: "Documents",
-          createdAt: d.createdAt,
-          data: d,
-        })
-      );
+      docs.forEach((d) => pushItem({ kind: "documents", id: d.id, source: "Documents", createdAt: d.createdAt, data: d }));
     }
 
     if (scope === "all" || scope === "renewed") {
@@ -845,21 +775,11 @@ app.get("/manager/items", (req, res) => {
         .filter((h) => String(h.action || "").toUpperCase() === "RENEWED")
         .forEach((h) => {
           const rec = ensureEntityKey(h.data || {});
-          pushItem({
-            kind: "renewed",
-            id: rec.id,
-            source: "Renewed",
-            changedAt: h.changedAt,
-            entityKey: h.entityKey || rec.entityKey,
-            data: rec,
-          });
+          pushItem({ kind: "renewed", id: rec.id, source: "Renewed", changedAt: h.changedAt, entityKey: h.entityKey || rec.entityKey, data: rec });
         });
     }
 
-    items.sort((a, b) =>
-      String(b.changedAt || b.createdAt).localeCompare(String(a.changedAt || a.createdAt))
-    );
-
+    items.sort((a, b) => String(b.changedAt || b.createdAt).localeCompare(String(a.changedAt || a.createdAt)));
     return res.json({ success: true, items });
   } catch (e) {
     console.log(e);
@@ -886,29 +806,17 @@ const findSoffice = () => {
   const envPath = process.env.SOFFICE_PATH;
   if (envPath && fs.existsSync(envPath)) return envPath;
 
-  const candidates = [
-    "/usr/bin/libreoffice",
-    "/usr/bin/soffice",
-    "/usr/lib/libreoffice/program/soffice",
-  ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
-  }
+  const candidates = ["/usr/bin/libreoffice", "/usr/bin/soffice", "/usr/lib/libreoffice/program/soffice"];
+  for (const p of candidates) if (fs.existsSync(p)) return p;
   return null;
 };
 
 const generatePDF = (record, templateFile, filenameBase, res) => {
   const templatePath = path.join(__dirname, "templates", templateFile);
-  if (!fs.existsSync(templatePath)) {
-    return res.status(404).send(`Template not found: ${templateFile}`);
-  }
+  if (!fs.existsSync(templatePath)) return res.status(404).send(`Template not found: ${templateFile}`);
 
   const soffice = findSoffice();
-  if (!soffice) {
-    return res
-      .status(500)
-      .send("LibreOffice not found. Install LibreOffice or fix SOFFICE_PATH.");
-  }
+  if (!soffice) return res.status(500).send("LibreOffice not found. Install LibreOffice or fix SOFFICE_PATH.");
 
   const stamp = `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
   const outDir = path.join(os.tmpdir(), "bfp_pdf_out");
@@ -929,8 +837,7 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
     const view = {
       FSIC_NUMBER: record.FSIC_NUMBER || record.FSIC_APP_NO || record.fsicAppNo || "",
       DATE_INSPECTED: record.DATE_INSPECTED || record.dateInspected || "",
-      NAME_OF_ESTABLISHMENT:
-        record.NAME_OF_ESTABLISHMENT || record.ESTABLISHMENT_NAME || record.establishmentName || "",
+      NAME_OF_ESTABLISHMENT: record.NAME_OF_ESTABLISHMENT || record.ESTABLISHMENT_NAME || record.establishmentName || "",
       NAME_OF_OWNER: record.NAME_OF_OWNER || record.OWNERS_NAME || record.ownerName || "",
       ADDRESS: record.ADDRESS || record.BUSSINESS_ADDRESS || record.businessAddress || "",
       FLOOR_AREA: record.FLOOR_AREA || record.floorArea || "",
@@ -971,9 +878,7 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
         console.log("LibreOffice ERROR:", err);
         console.log("stdout:", stdout);
         console.log("stderr:", stderr);
-        try {
-          if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
-        } catch {}
+        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
         return res.status(500).send("PDF conversion failed. Check backend logs.");
       }
 
@@ -981,27 +886,18 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
 
       if (!fs.existsSync(expectedPdf)) {
         console.log("PDF not found after conversion.");
-        console.log("expectedPdf:", expectedPdf);
-        try {
-          if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
-        } catch {}
+        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
         return res.status(500).send("PDF file not produced. Check LibreOffice conversion.");
       }
 
       res.download(expectedPdf, () => {
-        try {
-          if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
-        } catch {}
-        try {
-          if (fs.existsSync(expectedPdf)) fs.unlinkSync(expectedPdf);
-        } catch {}
+        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
+        try { if (fs.existsSync(expectedPdf)) fs.unlinkSync(expectedPdf); } catch {}
       });
     });
   } catch (e) {
     console.log("PDF generation failed:", e);
-    try {
-      if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
-    } catch {}
+    try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
     return res.status(500).send("PDF generation failed (docxtemplater/render). Check logs.");
   }
 };
@@ -1031,7 +927,8 @@ app.get("/records/:id/:docType/pdf", (req, res) => {
 
 // DOCUMENTS PDF generation
 app.get("/documents/:id/:docType/pdf", (req, res) => {
-  const doc = (readJSON(DOCUMENTS_FILE) || []).find((r) => String(r.id) == String(req.params.id));
+  const id = sid(req.params.id);
+  const doc = (readJSON(DOCUMENTS_FILE) || []).find((r) => sid(r.id) === id);
   if (!doc) return res.status(404).send("Document not found");
 
   let templateFile = "";
