@@ -4,6 +4,7 @@
 // ✅ Data Manager endpoints (list + delete)
 // ✅ Export endpoint (returns JSON list with latest renewed per entityKey for a month)
 // ✅ PDF generation endpoints (LibreOffice in Docker)
+// ✅ NEW: Excel import endpoint (/import/excel)
 
 import express from "express";
 import cors from "cors";
@@ -14,6 +15,11 @@ import Docxtemplater from "docxtemplater";
 import { exec } from "child_process";
 import { fileURLToPath } from "url";
 import os from "os";
+
+// ✅ NEW
+import multer from "multer";
+import xlsx from "xlsx";
+import crypto from "crypto";
 
 // -----------------------------
 // PATHS / APP
@@ -35,6 +41,12 @@ app.use(
   })
 );
 app.use(express.json({ limit: "10mb" }));
+
+// ✅ NEW (multer memory storage)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 }, // 15MB
+});
 
 // -----------------------------
 // FILES
@@ -187,6 +199,165 @@ const getLatestRenewedByEntityKey = (entityKey) => {
 };
 
 // -----------------------------
+// ✅ NEW: EXCEL IMPORT HELPERS
+// -----------------------------
+const pickAny = (obj, keys = []) => {
+  for (const k of keys) {
+    const v = obj?.[k];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return v;
+  }
+  return "";
+};
+
+// normalize excel header keys: remove spaces, dashes, underscores, lowercase
+const normHeader = (s) =>
+  String(s ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/_/g, "")
+    .replace(/-/g, "");
+
+const makeId = () => {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return String(Date.now() + Math.floor(Math.random() * 100000));
+  }
+};
+
+// Excel date can be serial number. Convert if needed.
+const excelDateToISO = (v) => {
+  // if already string like "2026-01-02" or "January 2, 2026" keep it
+  if (typeof v === "string") return v;
+
+  // xlsx usually returns numbers for date serials
+  if (typeof v === "number") {
+    // Excel epoch starts 1899-12-30 in JS conversion for xlsx style
+    const dt = new Date(Math.round((v - 25569) * 86400 * 1000));
+    if (!isNaN(dt.getTime())) {
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, "0");
+      const d = String(dt.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+  }
+  return String(v ?? "");
+};
+
+// maps one Excel row to record fields (supports many header variants)
+const mapExcelRowToRecord = (row = {}) => {
+  // build a normalized header map for flexible matching
+  const headerMap = {};
+  for (const k of Object.keys(row)) {
+    headerMap[normHeader(k)] = row[k];
+  }
+
+  const get = (...variants) => pickAny(headerMap, variants.map(normHeader));
+
+  const rec = {
+    id: Date.now(),
+    createdAt: new Date().toISOString(),
+
+    appno: String(get("appno", "applicationno", "application#", "applicationnumber") || ""),
+    fsicAppNo: String(get("fsicappno", "fsicno", "fsicnumber", "fsicapp#", "fsicapp") || ""),
+    natureOfInspection: String(get("natureofinspection", "inspection", "nature") || ""),
+    ownerName: String(get("owner", "ownername", "ownersname", "taxpayer") || ""),
+    establishmentName: String(get("establishment", "establishmentname", "tradename", "nameofestablishment") || ""),
+    businessAddress: String(get("businessaddress", "address", "bussinessaddress") || ""),
+    contactNumber: String(get("contactnumber", "contact", "contact_", "mobile") || ""),
+    dateInspected: excelDateToISO(get("dateinspected", "dateinspected_", "date", "dateinspected(yyyy-mm-dd)") || ""),
+
+    ioNumber: String(get("ionumber", "io#", "io") || ""),
+    ioDate: excelDateToISO(get("iodate") || ""),
+
+    nfsiNumber: String(get("nfsinumber", "nfsi#", "nfsi") || ""),
+    nfsiDate: excelDateToISO(get("nfsidate") || ""),
+
+    fsicValidity: String(get("fsicvalidity", "validity") || ""),
+    defects: String(get("defects", "violations") || ""),
+    inspectors: String(get("inspectors", "inspector") || ""),
+    occupancyType: String(get("occupancytype", "occupancy") || ""),
+    buildingDesc: String(get("buildingdesc", "bldgdescription", "buildingdescription") || ""),
+    floorArea: String(get("floorarea") || ""),
+    buildingHeight: String(get("buildingheight") || ""),
+    storeyCount: String(get("storeycount", "storeys", "storey") || ""),
+    highRise: String(get("highrise") || ""),
+    fsmr: String(get("fsmr") || ""),
+    remarks: String(get("remarks") || ""),
+
+    orNumber: String(get("ornumber", "or#") || ""),
+    orAmount: String(get("oramount") || ""),
+    orDate: excelDateToISO(get("ordate") || ""),
+
+    chiefName: String(get("chiefname", "chief") || ""),
+    marshalName: String(get("marshalname", "marshal") || ""),
+  };
+
+  // fallback ID per row
+  rec.id = makeId();
+
+  // uppercase some key strings (optional)
+  rec.fsicAppNo = String(rec.fsicAppNo || "").toUpperCase().trim();
+  rec.ownerName = String(rec.ownerName || "").toUpperCase().trim();
+  rec.establishmentName = String(rec.establishmentName || "").toUpperCase().trim();
+  rec.businessAddress = String(rec.businessAddress || "").toUpperCase().trim();
+
+  return ensureEntityKey(rec);
+};
+
+// -----------------------------
+// ✅ NEW: IMPORT EXCEL ENDPOINT
+// -----------------------------
+app.post("/import/excel", upload.single("file"), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "No file uploaded." });
+    }
+
+    const filename = String(req.file.originalname || "").toLowerCase();
+    if (!filename.endsWith(".xlsx") && !filename.endsWith(".xls")) {
+      return res.status(400).json({ success: false, message: "Invalid file. Upload .xlsx or .xls only." });
+    }
+
+    // read workbook
+    const wb = xlsx.read(req.file.buffer, { type: "buffer" });
+    const sheetName = wb.SheetNames?.[0];
+    if (!sheetName) {
+      return res.status(400).json({ success: false, message: "Excel file has no sheets." });
+    }
+
+    const ws = wb.Sheets[sheetName];
+    const rows = xlsx.utils.sheet_to_json(ws, { defval: "" }); // array of row objects
+
+    if (!rows.length) {
+      return res.status(400).json({ success: false, message: "Excel sheet is empty." });
+    }
+
+    const current = (readJSON(DATA_FILE) || []).map(ensureEntityKey);
+
+    // map rows -> records
+    const mapped = rows.map(mapExcelRowToRecord);
+
+    // keep only valid records (must have fsicAppNo + ownerName at least)
+    const toAdd = mapped.filter((r) => normalize(r.fsicAppNo) && normalize(r.ownerName));
+
+    // merge to current records
+    const merged = [...current, ...toAdd];
+    writeJSON(DATA_FILE, merged);
+
+    return res.json({
+      success: true,
+      imported: toAdd.length,
+      skipped: mapped.length - toAdd.length,
+      sheet: sheetName,
+    });
+  } catch (e) {
+    console.error("POST /import/excel error:", e);
+    return res.status(500).json({ success: false, message: "Failed to import Excel." });
+  }
+});
+
+// -----------------------------
 // RECORDS (CURRENT)
 // -----------------------------
 app.get("/records", (req, res) => {
@@ -221,7 +392,7 @@ app.delete("/records/:id", (req, res) => {
     const id = Number(req.params.id);
     const list = readJSON(DATA_FILE) || [];
     const before = list.length;
-    const after = list.filter((r) => Number(r.id) !== id);
+    const after = list.filter((r) => String(r.id) !== String(id));
     writeJSON(DATA_FILE, after);
     return res.json({ success: true, deleted: before - after.length });
   } catch (e) {
@@ -275,13 +446,13 @@ app.get("/archive/:month", (req, res) => {
 app.delete("/archive/:month/:id", (req, res) => {
   try {
     const month = String(req.params.month || "");
-    const id = Number(req.params.id);
+    const id = String(req.params.id);
 
     const archive = readJSON(ARCHIVE_FILE) || {};
     const list = archive[month] || [];
     const before = list.length;
 
-    archive[month] = list.filter((r) => Number(r.id) !== id);
+    archive[month] = list.filter((r) => String(r.id) !== String(id));
     writeJSON(ARCHIVE_FILE, archive);
 
     return res.json({ success: true, deleted: before - (archive[month] || []).length });
@@ -402,7 +573,6 @@ app.put("/records/:id", (req, res) => {
   }
 });
 
-
 app.get("/records/renewed", (req, res) => {
   try {
     const history = readJSON(HISTORY_FILE) || [];
@@ -436,7 +606,7 @@ app.delete("/records/renewed/:id", (req, res) => {
     const after = history.filter((h) => {
       if (String(h.action || "").toUpperCase() !== "RENEWED") return true;
       const rec = h.data || {};
-      return Number(rec.id) !== id;
+      return String(rec.id) !== String(id);
     });
 
     writeJSON(HISTORY_FILE, after);
@@ -673,21 +843,14 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
     const doc = new Docxtemplater(zip, {
       paragraphLoop: true,
       linebreaks: true,
-      // ✅ if tag not provided, return empty string (so it won't crash)
       nullGetter: () => "",
     });
-
-    // ✅ Build a single "view" object with ALL tags used by your templates:
-    // FSIC templates use {CHIEF} {MARSHAL} etc. 
-    // IO template uses {IO_NUMBER} {IO_DATE} {TAXPAYER} ... :contentReference[oaicite:3]{index=3}
-    // Reinspection template uses same tags :contentReference[oaicite:4]{index=4}
-    // NFSI uses {NFSI_NUMBER} {NFSI_DATE} {MARSHAL} :contentReference[oaicite:5]{index=5}
 
     const view = {
       FSIC_NUMBER: record.FSIC_NUMBER || record.FSIC_APP_NO || record.fsicAppNo || "",
       DATE_INSPECTED: record.DATE_INSPECTED || record.dateInspected || "",
       NAME_OF_ESTABLISHMENT:
-      record.NAME_OF_ESTABLISHMENT || record.ESTABLISHMENT_NAME || record.establishmentName || "",
+        record.NAME_OF_ESTABLISHMENT || record.ESTABLISHMENT_NAME || record.establishmentName || "",
       NAME_OF_OWNER: record.NAME_OF_OWNER || record.OWNERS_NAME || record.ownerName || "",
       ADDRESS: record.ADDRESS || record.BUSSINESS_ADDRESS || record.businessAddress || "",
       FLOOR_AREA: record.FLOOR_AREA || record.floorArea || "",
@@ -728,7 +891,9 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
         console.log("LibreOffice ERROR:", err);
         console.log("stdout:", stdout);
         console.log("stderr:", stderr);
-        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
+        try {
+          if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
+        } catch {}
         return res.status(500).send("PDF conversion failed. Check backend logs.");
       }
 
@@ -737,18 +902,26 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
       if (!fs.existsSync(expectedPdf)) {
         console.log("PDF not found after conversion.");
         console.log("expectedPdf:", expectedPdf);
-        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
+        try {
+          if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
+        } catch {}
         return res.status(500).send("PDF file not produced. Check LibreOffice conversion.");
       }
 
       res.download(expectedPdf, () => {
-        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
-        try { if (fs.existsSync(expectedPdf)) fs.unlinkSync(expectedPdf); } catch {}
+        try {
+          if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
+        } catch {}
+        try {
+          if (fs.existsSync(expectedPdf)) fs.unlinkSync(expectedPdf);
+        } catch {}
       });
     });
   } catch (e) {
     console.log("PDF generation failed:", e);
-    try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
+    try {
+      if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
+    } catch {}
     return res.status(500).send("PDF generation failed (docxtemplater/render). Check logs.");
   }
 };
@@ -789,8 +962,6 @@ app.get("/documents/:id/:docType/pdf", (req, res) => {
 
   generatePDF(doc, templateFile, `doc-${req.params.docType}-${doc.id}`, res);
 });
-
-
 
 // -----------------------------
 // START
