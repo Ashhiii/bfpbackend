@@ -4,7 +4,10 @@
 // ✅ Data Manager endpoints (list + delete)
 // ✅ Export endpoint (returns JSON list with latest renewed per entityKey for a month)
 // ✅ PDF generation endpoints (LibreOffice in Docker)
-// ✅ NEW: Excel import endpoint (/import/excel)
+// ✅ Excel import endpoints:
+//    - POST /import/records
+//    - POST /import/documents
+// ✅ keeps old: POST /import/excel (records import) for backward compatibility
 
 import express from "express";
 import cors from "cors";
@@ -199,7 +202,7 @@ const getLatestRenewedByEntityKey = (entityKey) => {
 };
 
 // -----------------------------
-// ✅ NEW: EXCEL IMPORT HELPERS
+// ✅ EXCEL IMPORT HELPERS
 // -----------------------------
 const pickAny = (obj, keys = []) => {
   for (const k of keys) {
@@ -227,12 +230,9 @@ const makeId = () => {
 
 // Excel date can be serial number. Convert if needed.
 const excelDateToISO = (v) => {
-  // if already string like "2026-01-02" or "January 2, 2026" keep it
   if (typeof v === "string") return v;
 
-  // xlsx usually returns numbers for date serials
   if (typeof v === "number") {
-    // Excel epoch starts 1899-12-30 in JS conversion for xlsx style
     const dt = new Date(Math.round((v - 25569) * 86400 * 1000));
     if (!isNaN(dt.getTime())) {
       const y = dt.getFullYear();
@@ -244,18 +244,14 @@ const excelDateToISO = (v) => {
   return String(v ?? "");
 };
 
-// maps one Excel row to record fields (supports many header variants)
+// ✅ map one Excel row to RECORD
 const mapExcelRowToRecord = (row = {}) => {
-  // build a normalized header map for flexible matching
   const headerMap = {};
-  for (const k of Object.keys(row)) {
-    headerMap[normHeader(k)] = row[k];
-  }
-
+  for (const k of Object.keys(row)) headerMap[normHeader(k)] = row[k];
   const get = (...variants) => pickAny(headerMap, variants.map(normHeader));
 
   const rec = {
-    id: Date.now(),
+    id: makeId(),
     createdAt: new Date().toISOString(),
 
     appno: String(get("appno", "applicationno", "application#", "applicationnumber") || ""),
@@ -264,8 +260,8 @@ const mapExcelRowToRecord = (row = {}) => {
     ownerName: String(get("owner", "ownername", "ownersname", "taxpayer") || ""),
     establishmentName: String(get("establishment", "establishmentname", "tradename", "nameofestablishment") || ""),
     businessAddress: String(get("businessaddress", "address", "bussinessaddress") || ""),
-    contactNumber: String(get("contactnumber", "contact", "contact_", "mobile") || ""),
-    dateInspected: excelDateToISO(get("dateinspected", "dateinspected_", "date", "dateinspected(yyyy-mm-dd)") || ""),
+    contactNumber: String(get("contactnumber", "contact", "mobile") || ""),
+    dateInspected: excelDateToISO(get("dateinspected", "date") || ""),
 
     ioNumber: String(get("ionumber", "io#", "io") || ""),
     ioDate: excelDateToISO(get("iodate") || ""),
@@ -293,10 +289,6 @@ const mapExcelRowToRecord = (row = {}) => {
     marshalName: String(get("marshalname", "marshal") || ""),
   };
 
-  // fallback ID per row
-  rec.id = makeId();
-
-  // uppercase some key strings (optional)
   rec.fsicAppNo = String(rec.fsicAppNo || "").toUpperCase().trim();
   rec.ownerName = String(rec.ownerName || "").toUpperCase().trim();
   rec.establishmentName = String(rec.establishmentName || "").toUpperCase().trim();
@@ -305,45 +297,133 @@ const mapExcelRowToRecord = (row = {}) => {
   return ensureEntityKey(rec);
 };
 
+// ✅ map one Excel row to DOCUMENT
+const mapExcelRowToDocument = (row = {}) => {
+  const headerMap = {};
+  for (const k of Object.keys(row)) headerMap[normHeader(k)] = row[k];
+  const get = (...variants) => pickAny(headerMap, variants.map(normHeader));
+
+  const doc = {
+    id: makeId(),
+    createdAt: new Date().toISOString(),
+
+    fsicAppNo: String(get("fsicappno", "fsicno", "fsicnumber", "fsicapp#", "fsicapp") || ""),
+    ownerName: String(get("owner", "ownername", "ownersname", "taxpayer") || ""),
+    establishmentName: String(get("establishment", "establishmentname", "tradename", "nameofestablishment") || ""),
+    businessAddress: String(get("businessaddress", "address", "bussinessaddress") || ""),
+    contactNumber: String(get("contactnumber", "contact", "mobile") || ""),
+
+    ioNumber: String(get("ionumber", "io#", "io") || ""),
+    ioDate: excelDateToISO(get("iodate") || ""),
+
+    nfsiNumber: String(get("nfsinumber", "nfsi#", "nfsi") || ""),
+    nfsiDate: excelDateToISO(get("nfsidate") || ""),
+
+    inspectors: String(get("inspectors", "inspector") || ""),
+    teamLeader: String(get("teamleader", "team_leader") || ""),
+
+    chiefName: String(get("chiefname", "chief") || ""),
+    marshalName: String(get("marshalname", "marshal") || ""),
+  };
+
+  doc.fsicAppNo = String(doc.fsicAppNo || "").toUpperCase().trim();
+  doc.ownerName = String(doc.ownerName || "").toUpperCase().trim();
+  doc.establishmentName = String(doc.establishmentName || "").toUpperCase().trim();
+  doc.businessAddress = String(doc.businessAddress || "").toUpperCase().trim();
+
+  return doc;
+};
+
+// helper: read first sheet rows
+const readExcelRows = (req) => {
+  if (!req.file) return { error: "No file uploaded." };
+
+  const filename = String(req.file.originalname || "").toLowerCase();
+  if (!filename.endsWith(".xlsx") && !filename.endsWith(".xls")) {
+    return { error: "Invalid file. Upload .xlsx or .xls only." };
+  }
+
+  const wb = xlsx.read(req.file.buffer, { type: "buffer" });
+  const sheetName = wb.SheetNames?.[0];
+  if (!sheetName) return { error: "Excel file has no sheets." };
+
+  const ws = wb.Sheets[sheetName];
+  const rows = xlsx.utils.sheet_to_json(ws, { defval: "" });
+
+  if (!rows.length) return { error: "Excel sheet is empty." };
+
+  return { rows, sheetName };
+};
+
 // -----------------------------
-// ✅ NEW: IMPORT EXCEL ENDPOINT
+// ✅ IMPORT EXCEL ENDPOINTS
 // -----------------------------
-app.post("/import/excel", upload.single("file"), (req, res) => {
+
+// ✅ Import to RECORDS
+app.post("/import/records", upload.single("file"), (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ success: false, message: "No file uploaded." });
-    }
-
-    const filename = String(req.file.originalname || "").toLowerCase();
-    if (!filename.endsWith(".xlsx") && !filename.endsWith(".xls")) {
-      return res.status(400).json({ success: false, message: "Invalid file. Upload .xlsx or .xls only." });
-    }
-
-    // read workbook
-    const wb = xlsx.read(req.file.buffer, { type: "buffer" });
-    const sheetName = wb.SheetNames?.[0];
-    if (!sheetName) {
-      return res.status(400).json({ success: false, message: "Excel file has no sheets." });
-    }
-
-    const ws = wb.Sheets[sheetName];
-    const rows = xlsx.utils.sheet_to_json(ws, { defval: "" }); // array of row objects
-
-    if (!rows.length) {
-      return res.status(400).json({ success: false, message: "Excel sheet is empty." });
-    }
+    const { rows, sheetName, error } = readExcelRows(req);
+    if (error) return res.status(400).json({ success: false, message: error });
 
     const current = (readJSON(DATA_FILE) || []).map(ensureEntityKey);
-
-    // map rows -> records
     const mapped = rows.map(mapExcelRowToRecord);
 
-    // keep only valid records (must have fsicAppNo + ownerName at least)
+    // require fsicAppNo + ownerName
     const toAdd = mapped.filter((r) => normalize(r.fsicAppNo) && normalize(r.ownerName));
 
-    // merge to current records
-    const merged = [...current, ...toAdd];
-    writeJSON(DATA_FILE, merged);
+    writeJSON(DATA_FILE, [...current, ...toAdd]);
+
+    return res.json({
+      success: true,
+      imported: toAdd.length,
+      skipped: mapped.length - toAdd.length,
+      sheet: sheetName,
+    });
+  } catch (e) {
+    console.error("POST /import/records error:", e);
+    return res.status(500).json({ success: false, message: "Failed to import records Excel." });
+  }
+});
+
+// ✅ Import to DOCUMENTS
+app.post("/import/documents", upload.single("file"), (req, res) => {
+  try {
+    const { rows, sheetName, error } = readExcelRows(req);
+    if (error) return res.status(400).json({ success: false, message: error });
+
+    const current = readJSON(DOCUMENTS_FILE) || [];
+    const mapped = rows.map(mapExcelRowToDocument);
+
+    // require fsicAppNo + establishmentName (or ownerName)
+    const toAdd = mapped.filter(
+      (d) => normalize(d.fsicAppNo) && (normalize(d.establishmentName) || normalize(d.ownerName))
+    );
+
+    writeJSON(DOCUMENTS_FILE, [...current, ...toAdd]);
+
+    return res.json({
+      success: true,
+      imported: toAdd.length,
+      skipped: mapped.length - toAdd.length,
+      sheet: sheetName,
+    });
+  } catch (e) {
+    console.error("POST /import/documents error:", e);
+    return res.status(500).json({ success: false, message: "Failed to import documents Excel." });
+  }
+});
+
+// ✅ OLD endpoint kept (imports to RECORDS) — so your old UI still works if used
+app.post("/import/excel", upload.single("file"), (req, res) => {
+  try {
+    const { rows, sheetName, error } = readExcelRows(req);
+    if (error) return res.status(400).json({ success: false, message: error });
+
+    const current = (readJSON(DATA_FILE) || []).map(ensureEntityKey);
+    const mapped = rows.map(mapExcelRowToRecord);
+
+    const toAdd = mapped.filter((r) => normalize(r.fsicAppNo) && normalize(r.ownerName));
+    writeJSON(DATA_FILE, [...current, ...toAdd]);
 
     return res.json({
       success: true,
