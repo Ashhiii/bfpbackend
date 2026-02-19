@@ -15,29 +15,21 @@ const PORT = process.env.PORT || 10000;
 
 app.use(express.json({ limit: "10mb" }));
 
-// -----------------------------
-// Find LibreOffice (for Docker/Render)
-// -----------------------------
+// Locate LibreOffice
 const findSoffice = () => {
-  const envPath = process.env.SOFFICE_PATH;
-  if (envPath && fs.existsSync(envPath)) return envPath;
-
-  const candidates = [
+  const paths = [
     "/usr/bin/libreoffice",
     "/usr/bin/soffice",
-    "/usr/lib/libreoffice/program/soffice",
+    "/usr/lib/libreoffice/program/soffice"
   ];
 
-  for (const p of candidates) {
+  for (const p of paths) {
     if (fs.existsSync(p)) return p;
   }
-
   return null;
 };
 
-// -----------------------------
-// Generate PDF from DOCX Template
-// -----------------------------
+// Core PDF generator
 const generatePDF = (data, templateFile, filenameBase, res) => {
   const templatePath = path.join(__dirname, "templates", templateFile);
 
@@ -47,7 +39,7 @@ const generatePDF = (data, templateFile, filenameBase, res) => {
 
   const soffice = findSoffice();
   if (!soffice) {
-    return res.status(500).send("LibreOffice not found. Install LibreOffice.");
+    return res.status(500).send("LibreOffice not installed.");
   }
 
   const stamp = Date.now();
@@ -63,7 +55,7 @@ const generatePDF = (data, templateFile, filenameBase, res) => {
     const doc = new Docxtemplater(zip, {
       paragraphLoop: true,
       linebreaks: true,
-      nullGetter: () => "",
+      nullGetter: () => ""
     });
 
     doc.render(data);
@@ -71,18 +63,15 @@ const generatePDF = (data, templateFile, filenameBase, res) => {
     const buf = doc.getZip().generate({ type: "nodebuffer" });
     fs.writeFileSync(outputDocx, buf);
 
-    const command = `"${soffice}" --headless --nologo --nolockcheck --norestore --convert-to pdf "${outputDocx}" --outdir "${outDir}"`;
+    const command = `"${soffice}" --headless --convert-to pdf "${outputDocx}" --outdir "${outDir}"`;
 
     exec(command, (err) => {
-      if (err) {
-        console.log("LibreOffice error:", err);
-        return res.status(500).send("PDF conversion failed.");
-      }
+      if (err) return res.status(500).send("PDF conversion failed.");
 
       const pdfFile = outputDocx.replace(".docx", ".pdf");
 
       if (!fs.existsSync(pdfFile)) {
-        return res.status(500).send("PDF file not created.");
+        return res.status(500).send("PDF not created.");
       }
 
       res.download(pdfFile, () => {
@@ -92,41 +81,31 @@ const generatePDF = (data, templateFile, filenameBase, res) => {
     });
 
   } catch (e) {
-    console.log("PDF generation error:", e);
-    return res.status(500).send("PDF generation failed.");
+    return res.status(500).send("PDF generation error.");
   }
 };
 
-// -----------------------------
-// ENDPOINTS
-// -----------------------------
-
-// FSIC Certificate
+// Routes
 app.post("/generate/fsic", (req, res) => {
   generatePDF(req.body, "fsic-owner.docx", "fsic", res);
 });
 
-// IO
 app.post("/generate/io", (req, res) => {
   generatePDF(req.body, "officers.docx", "io", res);
 });
 
-// Reinspection
 app.post("/generate/reinspection", (req, res) => {
   generatePDF(req.body, "reinspection.docx", "reinspection", res);
 });
 
-// NFSI
 app.post("/generate/nfsi", (req, res) => {
   generatePDF(req.body, "nfsi-form.docx", "nfsi", res);
 });
 
-// Health check
 app.get("/", (req, res) => {
-  res.send("PDF Generator Backend Running");
+  res.send("PDF Backend Running");
 });
 
-// -----------------------------
 app.listen(PORT, "0.0.0.0", () => {
-  console.log("PDF Backend running on port", PORT);
+  console.log("Server running on port", PORT);
 });
