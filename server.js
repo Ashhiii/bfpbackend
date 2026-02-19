@@ -6,12 +6,24 @@ import Docxtemplater from "docxtemplater";
 import { exec } from "child_process";
 import { fileURLToPath } from "url";
 import os from "os";
+import cors from "cors";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 10000;
+
+
+// ✅ CORS FIX
+app.use(
+  cors({
+    origin: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+app.options("*", cors());
 
 app.use(express.json({ limit: "10mb" }));
 
