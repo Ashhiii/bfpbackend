@@ -11,6 +11,7 @@
     "cors": "^2.8.5",
     "docxtemplater": "^3.52.0",
     "express": "^4.19.2",
+    "firebase-admin": "^13.6.1",
     "multer": "^2.0.2",
     "pizzip": "^3.1.7",
     "xlsx": "^0.18.5"
