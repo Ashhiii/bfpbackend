@@ -50,9 +50,9 @@ function initFirebaseAdmin() {
   if (admin.apps.length) return;
 
   // Option 1: Provide as separate env vars
-  const projectId = requireEnv("bfp-system-dd589");
-  const clientEmail = requireEnv("firebase-adminsdk-fbsvc@bfp-system-dd589.iam.gserviceaccount.com");
-  let privateKey = requireEnv("-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC0E3/dJmQxKzFe\nPkgIsjYUTn9vk3Y1aIfnY64qrUDSCZxPx1WrAJw1wG1YF7wE4OqD7a4b/6GMyXn+\ndQmyVOP5JCRPsncRyV3ytKrzImIhU3QkZiNt+rSS0iy1dU4mZwBDw+X0PEJjTOvo\nSL/exN39TdFL63TC4mjERkwHv7tq2ChbLepWH0lSnbSm7CrpWNLWMp7DSlqsUxE4\n8AdcVKZLbQNTayUYAv3ESazIPnqFmeD8AIZ0dxU8GvznxVsKlg/BUy8B0WDZMIsa\nEksGYb78a+eo/feMnsTQPmVe38Rm8oeHg7KVfQ5c6ZR/t1fCFUx1590uwG/RLz0h\nXS1NEB/5AgMBAAECggEAK5A+EhOcEHMJDeoWRhhK0e3NkYIEilYf7p/kPgnM0SMn\nD/vCo0xR/gTvzuxq/WkmAsWIpdhZTjRdkWvh7STxQ8/1AtzDRmfHFRSU+J28TKCi\nS73z20LX1V8IFtvqjIrFex9UrZm4W8p7laWn2S4aIBHnzKyJAi6Att7kvMkq/2Uk\nj5855AEz2J5Kkg3cC3WUVu71cEYsIGYcHhRakbKHUVEDvS5Q4KxfQtcf7hEDKCsS\n7oFZoKsPrinywAQ9Zc7mQX9gM71KL5yepicvgHf6qQNQAmBJzwolBFfz5qI0IBPJ\nsRA34fJ49dxwRRym5f8vqTnrpzkefs3MHoe8Ay4wqQKBgQDi1NL9OssMRS5EdOfH\nzloD5yKS7SZbIF2CGqR1poCrVSjmFLvHuwmsTG6+cV5u1cPJCkuFLLGefct3HL2P\ni7si2eUPdM4EG/ovGp05yh/qaAbNXfgg535glyOplFyRKNx27AfloTUr3fwVI9xG\n0QSC2vaFR9Ys3Oc+QcABaBg7ZQKBgQDLO4Sd+8jiuM65y477XW3zQ5Yn5VtytG1s\nwTu+LYXgudK20HMeso5g+UpCUvPSaT8mu79zKeeb2F6a6/ptPNNyyYQam6iPzhjU\nppRn5JimXAbab/ZDCI87BDtrO60ITbWsB/eyNl9EUOceDJFlZTE3RJSAQjqnMezU\n8WTb0tkrBQKBgEj8D5NZOoINNHDkaLuags4krbQ2yBOkG1JEfkw4scfvE8TMQQtn\n/BnLUgrG8YqaD2/9dwU3t0L22OPPhJLOc/0nvRM3Ex6xXdOQLaytg41pwV6M8Myt\nj7VGjDwBN7OhQSamlXfmYfRmbbjjm/nRQTFVgOKrlZdD0MfwYfZR5xIdAoGBAI76\nuYtYJ3VyZWYLUvV/Pqplg09gKh0h2NYpgDmE12pJ8XfSYRtYrZiF6fuNVqJSjy5V\n6hRAiAR5jd1aZZ3SrERWh80cc9NwQMHizAfnqIlptxyYpl10uSfhC1ie7FYqLcTw\n+g9z90Qd0uuuFeCK97wVUJCHh7I3CpKpnbaVuVltAoGBAKl8cJMyChBCwb3yW/1d\nySq+XeUO5bYWVNnkhBgYMDWdR510O+VAFzK1bggT/n234o7PHEBd1yvsVrWMuHB1\nofh1Pokh4YoYJIRtPcxpScxGDJ9czfSn7x1Rae2cBPPDS7/waBXKt9welgtakgJy\nD7O5fvYHdbYCOzeLHxtkrYG1\n-----END PRIVATE KEY-----\n");
+ const projectId = requireEnv("FIREBASE_PROJECT_ID");
+  const clientEmail = requireEnv("FIREBASE_CLIENT_EMAIL");
+  let privateKey = requireEnv("FIREBASE_PRIVATE_KEY");
 
   // Render env usually stores \n as literal text → convert to real newlines
   privateKey = privateKey.replace(/\\n/g, "\n");
