@@ -50,7 +50,7 @@ function initFirebaseAdmin() {
   if (admin.apps.length) return;
 
   // Option 1: Provide as separate env vars
- const projectId = requireEnv("FIREBASE_PROJECT_ID");
+ const projectId = requireEnv("VITE_FB_PROJECT_ID");
   const clientEmail = requireEnv("FIREBASE_CLIENT_EMAIL");
   let privateKey = requireEnv("FIREBASE_PRIVATE_KEY");
 
