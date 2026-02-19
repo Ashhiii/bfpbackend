@@ -1,201 +1,132 @@
 import express from "express";
-import cors from "cors";
 import fs from "fs";
 import path from "path";
-import os from "os";
-import { exec } from "child_process";
-import { fileURLToPath } from "url";
-
-import admin from "firebase-admin";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
+import { exec } from "child_process";
+import { fileURLToPath } from "url";
+import os from "os";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+const PORT = process.env.PORT || 10000;
 
-const PORT = Number(process.env.PORT) || 5000;
+app.use(express.json({ limit: "10mb" }));
 
-// -------------------------
-// ✅ Firebase Admin
-// -------------------------
-// Option A (recommended on Render): use env var FIREBASE_SERVICE_ACCOUNT_JSON
-// Put the full json string in env (Render > Environment))
-if (!admin.apps.length) {
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  if (!raw) {
-    console.warn("⚠️ Missing FIREBASE_SERVICE_ACCOUNT_JSON env var");
-  } else {
-    admin.initializeApp({
-      credential: admin.credential.cert(JSON.parse(raw)),
-    });
+// -----------------------------
+// Find LibreOffice (for Docker/Render)
+// -----------------------------
+const findSoffice = () => {
+  const envPath = process.env.SOFFICE_PATH;
+  if (envPath && fs.existsSync(envPath)) return envPath;
+
+  const candidates = [
+    "/usr/bin/libreoffice",
+    "/usr/bin/soffice",
+    "/usr/lib/libreoffice/program/soffice",
+  ];
+
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
   }
-}
-const db = admin.firestore();
 
-// -------------------------
-// ✅ Templates folder
-// -------------------------
-const TPL_DIR = path.join(__dirname, "templates"); // make sure exists
-const TPL = {
-  io: path.join(TPL_DIR, "io.docx"),
-  reinspection: path.join(TPL_DIR, "reinspection.docx"),
-  nfsi: path.join(TPL_DIR, "nfsi.docx"),
+  return null;
 };
 
-// -------------------------
-// Helpers
-// -------------------------
-const safe = (s) => String(s || "").replace(/[^\w\-]+/g, "_").slice(0, 80);
+// -----------------------------
+// Generate PDF from DOCX Template
+// -----------------------------
+const generatePDF = (data, templateFile, filenameBase, res) => {
+  const templatePath = path.join(__dirname, "templates", templateFile);
 
-const readTemplate = (filePath) => {
-  if (!fs.existsSync(filePath)) throw new Error(`Template not found: ${filePath}`);
-  return fs.readFileSync(filePath, "binary");
-};
+  if (!fs.existsSync(templatePath)) {
+    return res.status(404).send("Template not found.");
+  }
 
-const renderDocx = (templatePath, data) => {
-  const content = readTemplate(templatePath);
-  const zip = new PizZip(content);
+  const soffice = findSoffice();
+  if (!soffice) {
+    return res.status(500).send("LibreOffice not found. Install LibreOffice.");
+  }
 
-  const doc = new Docxtemplater(zip, {
-    paragraphLoop: true,
-    linebreaks: true,
-  });
+  const stamp = Date.now();
+  const outDir = path.join(os.tmpdir(), "pdf_output");
+  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
-  // ✅ Fill template variables
-  doc.setData(data);
+  const outputDocx = path.join(outDir, `${filenameBase}-${stamp}.docx`);
 
   try {
-    doc.render();
-  } catch (e) {
-    console.error("DOCX render error:", e);
-    throw new Error("DOCX template render failed. Check placeholders.");
-  }
+    const content = fs.readFileSync(templatePath, "binary");
+    const zip = new PizZip(content);
 
-  return doc.getZip().generate({ type: "nodebuffer" });
-};
+    const doc = new Docxtemplater(zip, {
+      paragraphLoop: true,
+      linebreaks: true,
+      nullGetter: () => "",
+    });
 
-const convertDocxToPdf = async (docxBuffer, outName = "output") => {
-  const tmp = os.tmpdir();
-  const inPath = path.join(tmp, `${outName}.docx`);
-  const outDir = tmp;
+    doc.render(data);
 
-  fs.writeFileSync(inPath, docxBuffer);
+    const buf = doc.getZip().generate({ type: "nodebuffer" });
+    fs.writeFileSync(outputDocx, buf);
 
-  // ✅ LibreOffice conversion
-  // Windows: soffice.exe available if installed
-  // Linux/Docker: libreoffice installed
-  const cmd = `soffice --headless --nologo --nofirststartwizard --convert-to pdf --outdir "${outDir}" "${inPath}"`;
+    const command = `"${soffice}" --headless --nologo --nolockcheck --norestore --convert-to pdf "${outputDocx}" --outdir "${outDir}"`;
 
-  await new Promise((resolve, reject) => {
-    exec(cmd, (err, stdout, stderr) => {
+    exec(command, (err) => {
       if (err) {
-        console.error("LibreOffice error:", stderr || stdout || err);
-        return reject(new Error("PDF conversion failed (LibreOffice)."));
+        console.log("LibreOffice error:", err);
+        return res.status(500).send("PDF conversion failed.");
       }
-      resolve();
+
+      const pdfFile = outputDocx.replace(".docx", ".pdf");
+
+      if (!fs.existsSync(pdfFile)) {
+        return res.status(500).send("PDF file not created.");
+      }
+
+      res.download(pdfFile, () => {
+        try { fs.unlinkSync(outputDocx); } catch {}
+        try { fs.unlinkSync(pdfFile); } catch {}
+      });
     });
-  });
 
-  const pdfPath = path.join(outDir, `${outName}.pdf`);
-  if (!fs.existsSync(pdfPath)) throw new Error("PDF not created.");
-
-  const pdfBuffer = fs.readFileSync(pdfPath);
-
-  // cleanup
-  try {
-    fs.unlinkSync(inPath);
-    fs.unlinkSync(pdfPath);
-  } catch {}
-
-  return pdfBuffer;
+  } catch (e) {
+    console.log("PDF generation error:", e);
+    return res.status(500).send("PDF generation failed.");
+  }
 };
 
-const getDocumentData = async (id) => {
-  const snap = await db.collection("documents").doc(String(id)).get();
-  if (!snap.exists) throw new Error("Document not found in Firestore.");
-  const data = snap.data() || {};
+// -----------------------------
+// ENDPOINTS
+// -----------------------------
 
-  // ✅ Return data object for docx placeholders
-  // Make sure placeholders in docx match these keys!
-  return {
-    id,
-    fsicAppNo: data.fsicAppNo || "",
-    ownerName: data.ownerName || "",
-    establishmentName: data.establishmentName || "",
-    businessAddress: data.businessAddress || "",
-    contactNumber: data.contactNumber || "",
-    ioNumber: data.ioNumber || "",
-    ioDate: data.ioDate || "",
-    nfsiNumber: data.nfsiNumber || "",
-    nfsiDate: data.nfsiDate || "",
-    inspectors: data.inspectors || "",
-    teamLeader: data.teamLeader || "",
-    chiefName: data.chiefName || "",
-    marshalName: data.marshalName || "",
-  };
-};
-
-const sendPdf = (res, pdfBuffer, filename) => {
-  res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-  res.send(pdfBuffer);
-};
-
-// -------------------------
-// ✅ PDF Endpoints (match your frontend URLs)
-// -------------------------
-app.get("/documents/:id/io/pdf", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const data = await getDocumentData(id);
-    const baseName = `IO_${safe(data.fsicAppNo || id)}`;
-
-    const docx = renderDocx(TPL.io, data);
-    const pdf = await convertDocxToPdf(docx, baseName);
-
-    return sendPdf(res, pdf, `${baseName}.pdf`);
-  } catch (e) {
-    console.error(e);
-    return res.status(500).send(e.message || "Failed to generate IO PDF");
-  }
+// FSIC Certificate
+app.post("/generate/fsic", (req, res) => {
+  generatePDF(req.body, "fsic-owner.docx", "fsic", res);
 });
 
-app.get("/documents/:id/reinspection/pdf", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const data = await getDocumentData(id);
-    const baseName = `REINSPECTION_${safe(data.fsicAppNo || id)}`;
-
-    const docx = renderDocx(TPL.reinspection, data);
-    const pdf = await convertDocxToPdf(docx, baseName);
-
-    return sendPdf(res, pdf, `${baseName}.pdf`);
-  } catch (e) {
-    console.error(e);
-    return res.status(500).send(e.message || "Failed to generate Reinspection PDF");
-  }
+// IO
+app.post("/generate/io", (req, res) => {
+  generatePDF(req.body, "officers.docx", "io", res);
 });
 
-app.get("/documents/:id/nfsi/pdf", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const data = await getDocumentData(id);
-    const baseName = `NFSI_${safe(data.fsicAppNo || id)}`;
-
-    const docx = renderDocx(TPL.nfsi, data);
-    const pdf = await convertDocxToPdf(docx, baseName);
-
-    return sendPdf(res, pdf, `${baseName}.pdf`);
-  } catch (e) {
-    console.error(e);
-    return res.status(500).send(e.message || "Failed to generate NFSI PDF");
-  }
+// Reinspection
+app.post("/generate/reinspection", (req, res) => {
+  generatePDF(req.body, "reinspection.docx", "reinspection", res);
 });
 
-app.get("/", (_, res) => res.send("OK"));
+// NFSI
+app.post("/generate/nfsi", (req, res) => {
+  generatePDF(req.body, "nfsi-form.docx", "nfsi", res);
+});
 
-app.listen(PORT, () => console.log("Server running on", PORT));
+// Health check
+app.get("/", (req, res) => {
+  res.send("PDF Generator Backend Running");
+});
+
+// -----------------------------
+app.listen(PORT, "0.0.0.0", () => {
+  console.log("PDF Backend running on port", PORT);
+});
