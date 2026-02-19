@@ -69,6 +69,35 @@ function initFirebaseAdmin() {
 initFirebaseAdmin();
 const db = admin.firestore();
 
+
+// =============================
+// AUTH PIN → CREATE CUSTOM TOKEN
+// =============================
+app.post("/auth/pin", async (req, res) => {
+  try {
+    const inputPin = String(req.body?.pin || "").trim();
+    const systemPin = process.env.SYSTEM_PIN; // from Render ENV
+
+    if (!systemPin) {
+      return res.status(500).json({ ok: false, message: "PIN not configured on server" });
+    }
+
+    if (inputPin !== systemPin) {
+      return res.status(401).json({ ok: false, message: "Invalid PIN" });
+    }
+
+    // 👇 Create custom token with role
+    const uid = "bfp-station";
+    const token = await admin.auth().createCustomToken(uid, { role: "bfp" });
+
+    return res.json({ ok: true, token });
+
+  } catch (err) {
+    console.error("Auth PIN error:", err);
+    return res.status(500).json({ ok: false });
+  }
+});
+
 // -----------------------------
 // Helpers
 // -----------------------------
