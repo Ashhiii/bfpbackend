@@ -1,4 +1,4 @@
-// server.js (UPDATED FULL) — BFP System Backend (Docker + Render Ready)
+// server.js (FULL + FIXED + PERSISTENT READY) — BFP System Backend (Docker + Render Ready)
 // ✅ Current + Archive + Documents
 // ✅ Renew logs (history.json) + get latest renewed per entityKey
 // ✅ Data Manager endpoints (list + delete)
@@ -8,8 +8,9 @@
 //    - POST /import/records
 //    - POST /import/documents
 // ✅ keeps old: POST /import/excel (records import) for backward compatibility
-//
-// ✅ FIX: All :id routes now use STRING id comparison (works for UUID + Date.now)
+// ✅ FIX: All :id routes use STRING id comparison (works for UUID + Date.now)
+// ✅ FIX: Documents + Records dates converted from Excel serial -> YYYY-MM-DD
+// ✅ FIX: DATA_DIR support (use Render Persistent Disk to avoid data loss)
 
 import express from "express";
 import cors from "cors";
@@ -52,12 +53,18 @@ const upload = multer({
 });
 
 // -----------------------------
+// ✅ PERSISTENT DATA DIR (Render Disk)
+// -----------------------------
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+// -----------------------------
 // FILES
 // -----------------------------
-const DATA_FILE = path.join(__dirname, "records.json");
-const ARCHIVE_FILE = path.join(__dirname, "archive.json");
-const DOCUMENTS_FILE = path.join(__dirname, "documents.json");
-const HISTORY_FILE = path.join(__dirname, "history.json");
+const DATA_FILE = path.join(DATA_DIR, "records.json"); // current records (array)
+const ARCHIVE_FILE = path.join(DATA_DIR, "archive.json"); // { "YYYY-MM": [records...] }
+const DOCUMENTS_FILE = path.join(DATA_DIR, "documents.json"); // documents (array)
+const HISTORY_FILE = path.join(DATA_DIR, "history.json"); // renew logs (array)
 
 // -----------------------------
 // HELPERS
@@ -75,6 +82,25 @@ const writeJSON = (file, data) => fs.writeFileSync(file, JSON.stringify(data, nu
 
 const normalize = (v) => String(v ?? "").trim();
 const sid = (v) => String(v ?? ""); // ✅ string id helper
+
+// ✅ Excel date can be serial number -> convert to YYYY-MM-DD (or return string)
+const excelDateToISO = (v) => {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "string") return v;
+
+  if (typeof v === "number") {
+    // Excel serial date (days since 1899-12-30)
+    const dt = new Date(Math.round((v - 25569) * 86400 * 1000));
+    if (!isNaN(dt.getTime())) {
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, "0");
+      const d = String(dt.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+  }
+
+  return String(v);
+};
 
 const ensureEntityKey = (r) => {
   if (!r) return r;
@@ -101,7 +127,7 @@ const findRecordById = (id) => {
   return null;
 };
 
-// record fields
+// ✅ accepts BOTH old ALL CAPS and new camelCase
 const pickAllowedRecordFields = (obj = {}) => {
   return {
     appno: obj.appno ?? obj.APPLICATION_NO ?? "",
@@ -111,13 +137,13 @@ const pickAllowedRecordFields = (obj = {}) => {
     establishmentName: obj.establishmentName ?? obj.ESTABLISHMENT_NAME ?? "",
     businessAddress: obj.businessAddress ?? obj.BUSSINESS_ADDRESS ?? obj.ADDRESS ?? "",
     contactNumber: obj.contactNumber ?? obj.CONTACT_NUMBER ?? "",
-    dateInspected: obj.dateInspected ?? obj.DATE_INSPECTED ?? "",
+    dateInspected: excelDateToISO(obj.dateInspected ?? obj.DATE_INSPECTED ?? ""), // ✅ convert
 
     ioNumber: obj.ioNumber ?? obj.IO_NUMBER ?? "",
-    ioDate: obj.ioDate ?? obj.IO_DATE ?? "",
+    ioDate: excelDateToISO(obj.ioDate ?? obj.IO_DATE ?? ""), // ✅ convert
 
     nfsiNumber: obj.nfsiNumber ?? obj.NFSI_NUMBER ?? "",
-    nfsiDate: obj.nfsiDate ?? obj.NFSI_DATE ?? "",
+    nfsiDate: excelDateToISO(obj.nfsiDate ?? obj.NFSI_DATE ?? ""), // ✅ convert
 
     fsicValidity: obj.fsicValidity ?? obj.FSIC_VALIDITY ?? "",
     defects: obj.defects ?? obj.DEFECTS ?? "",
@@ -133,14 +159,14 @@ const pickAllowedRecordFields = (obj = {}) => {
 
     orNumber: obj.orNumber ?? obj.OR_NUMBER ?? "",
     orAmount: obj.orAmount ?? obj.OR_AMOUNT ?? "",
-    orDate: obj.orDate ?? obj.OR_DATE ?? "",
+    orDate: excelDateToISO(obj.orDate ?? obj.OR_DATE ?? ""), // ✅ convert
 
     chiefName: obj.chiefName ?? obj.CHIEF ?? "",
     marshalName: obj.marshalName ?? obj.MARSHAL ?? "",
   };
 };
 
-// document fields
+// ✅ Documents fields (store what templates need for IO/NFSI/Reinspection too)
 const pickAllowedDocumentFields = (obj = {}) => {
   return {
     fsicAppNo: obj.fsicAppNo ?? obj.FSIC_APP_NO ?? obj.FSIC_NUMBER ?? "",
@@ -151,14 +177,15 @@ const pickAllowedDocumentFields = (obj = {}) => {
     contactNumber: obj.contactNumber ?? obj.CONTACT_NUMBER ?? "",
 
     ioNumber: obj.ioNumber ?? obj.IO_NUMBER ?? "",
-    ioDate: obj.ioDate ?? obj.IO_DATE ?? "",
+    ioDate: excelDateToISO(obj.ioDate ?? obj.IO_DATE ?? ""), // ✅ convert
 
     nfsiNumber: obj.nfsiNumber ?? obj.NFSI_NUMBER ?? "",
-    nfsiDate: obj.nfsiDate ?? obj.NFSI_DATE ?? "",
+    nfsiDate: excelDateToISO(obj.nfsiDate ?? obj.NFSI_DATE ?? ""), // ✅ convert
 
     inspectors: obj.inspectors ?? obj.INSPECTORS ?? "",
     teamLeader: obj.teamLeader ?? obj.TEAM_LEADER ?? "",
 
+    // signatures
     chiefName: obj.chiefName ?? obj.CHIEF ?? "",
     marshalName: obj.marshalName ?? obj.MARSHAL ?? "",
   };
@@ -169,7 +196,7 @@ const buildRenewedRecord = ({ entityKey, updatedRecord }) => {
   const now = new Date().toISOString();
 
   const newRecord = ensureEntityKey({
-    id: Date.now(), // renewed record id can stay number (still works now)
+    id: Date.now(),
     entityKey,
     ...base,
     teamLeader: updatedRecord?.teamLeader || "",
@@ -199,7 +226,7 @@ const getLatestRenewedByEntityKey = (entityKey) => {
 };
 
 // -----------------------------
-// EXCEL IMPORT HELPERS
+// ✅ EXCEL IMPORT HELPERS
 // -----------------------------
 const pickAny = (obj, keys = []) => {
   for (const k of keys) {
@@ -209,6 +236,7 @@ const pickAny = (obj, keys = []) => {
   return "";
 };
 
+// normalize excel header keys: remove spaces, dashes, underscores, lowercase
 const normHeader = (s) =>
   String(s ?? "")
     .toLowerCase()
@@ -224,20 +252,7 @@ const makeId = () => {
   }
 };
 
-const excelDateToISO = (v) => {
-  if (typeof v === "string") return v;
-  if (typeof v === "number") {
-    const dt = new Date(Math.round((v - 25569) * 86400 * 1000));
-    if (!isNaN(dt.getTime())) {
-      const y = dt.getFullYear();
-      const m = String(dt.getMonth() + 1).padStart(2, "0");
-      const d = String(dt.getDate()).padStart(2, "0");
-      return `${y}-${m}-${d}`;
-    }
-  }
-  return String(v ?? "");
-};
-
+// ✅ map one Excel row to RECORD
 const mapExcelRowToRecord = (row = {}) => {
   const headerMap = {};
   for (const k of Object.keys(row)) headerMap[normHeader(k)] = row[k];
@@ -251,7 +266,9 @@ const mapExcelRowToRecord = (row = {}) => {
     fsicAppNo: String(get("fsicappno", "fsicno", "fsicnumber", "fsicapp#", "fsicapp") || ""),
     natureOfInspection: String(get("natureofinspection", "inspection", "nature") || ""),
     ownerName: String(get("owner", "ownername", "ownersname", "taxpayer") || ""),
-    establishmentName: String(get("establishment", "establishmentname", "tradename", "nameofestablishment") || ""),
+    establishmentName: String(
+      get("establishment", "establishmentname", "tradename", "nameofestablishment") || ""
+    ),
     businessAddress: String(get("businessaddress", "address", "bussinessaddress") || ""),
     contactNumber: String(get("contactnumber", "contact", "mobile") || ""),
     dateInspected: excelDateToISO(get("dateinspected", "date") || ""),
@@ -290,6 +307,7 @@ const mapExcelRowToRecord = (row = {}) => {
   return ensureEntityKey(rec);
 };
 
+// ✅ map one Excel row to DOCUMENT (dates converted)
 const mapExcelRowToDocument = (row = {}) => {
   const headerMap = {};
   for (const k of Object.keys(row)) headerMap[normHeader(k)] = row[k];
@@ -301,7 +319,9 @@ const mapExcelRowToDocument = (row = {}) => {
 
     fsicAppNo: String(get("fsicappno", "fsicno", "fsicnumber", "fsicapp#", "fsicapp") || ""),
     ownerName: String(get("owner", "ownername", "ownersname", "taxpayer") || ""),
-    establishmentName: String(get("establishment", "establishmentname", "tradename", "nameofestablishment") || ""),
+    establishmentName: String(
+      get("establishment", "establishmentname", "tradename", "nameofestablishment") || ""
+    ),
     businessAddress: String(get("businessaddress", "address", "bussinessaddress") || ""),
     contactNumber: String(get("contactnumber", "contact", "mobile") || ""),
 
@@ -326,6 +346,7 @@ const mapExcelRowToDocument = (row = {}) => {
   return doc;
 };
 
+// helper: read first sheet rows
 const readExcelRows = (req) => {
   if (!req.file) return { error: "No file uploaded." };
 
@@ -346,7 +367,7 @@ const readExcelRows = (req) => {
 };
 
 // -----------------------------
-// IMPORT EXCEL ENDPOINTS
+// ✅ IMPORT EXCEL ENDPOINTS
 // -----------------------------
 app.post("/import/records", upload.single("file"), (req, res) => {
   try {
@@ -355,11 +376,18 @@ app.post("/import/records", upload.single("file"), (req, res) => {
 
     const current = (readJSON(DATA_FILE) || []).map(ensureEntityKey);
     const mapped = rows.map(mapExcelRowToRecord);
+
+    // require fsicAppNo + ownerName
     const toAdd = mapped.filter((r) => normalize(r.fsicAppNo) && normalize(r.ownerName));
 
     writeJSON(DATA_FILE, [...current, ...toAdd]);
 
-    return res.json({ success: true, imported: toAdd.length, skipped: mapped.length - toAdd.length, sheet: sheetName });
+    return res.json({
+      success: true,
+      imported: toAdd.length,
+      skipped: mapped.length - toAdd.length,
+      sheet: sheetName,
+    });
   } catch (e) {
     console.error("POST /import/records error:", e);
     return res.status(500).json({ success: false, message: "Failed to import records Excel." });
@@ -373,18 +401,27 @@ app.post("/import/documents", upload.single("file"), (req, res) => {
 
     const current = readJSON(DOCUMENTS_FILE) || [];
     const mapped = rows.map(mapExcelRowToDocument);
-    const toAdd = mapped.filter((d) => normalize(d.fsicAppNo) && (normalize(d.establishmentName) || normalize(d.ownerName)));
+
+    // require fsicAppNo + establishmentName (or ownerName)
+    const toAdd = mapped.filter(
+      (d) => normalize(d.fsicAppNo) && (normalize(d.establishmentName) || normalize(d.ownerName))
+    );
 
     writeJSON(DOCUMENTS_FILE, [...current, ...toAdd]);
 
-    return res.json({ success: true, imported: toAdd.length, skipped: mapped.length - toAdd.length, sheet: sheetName });
+    return res.json({
+      success: true,
+      imported: toAdd.length,
+      skipped: mapped.length - toAdd.length,
+      sheet: sheetName,
+    });
   } catch (e) {
     console.error("POST /import/documents error:", e);
     return res.status(500).json({ success: false, message: "Failed to import documents Excel." });
   }
 });
 
-// old endpoint
+// ✅ OLD endpoint kept (imports to RECORDS)
 app.post("/import/excel", upload.single("file"), (req, res) => {
   try {
     const { rows, sheetName, error } = readExcelRows(req);
@@ -392,11 +429,16 @@ app.post("/import/excel", upload.single("file"), (req, res) => {
 
     const current = (readJSON(DATA_FILE) || []).map(ensureEntityKey);
     const mapped = rows.map(mapExcelRowToRecord);
-    const toAdd = mapped.filter((r) => normalize(r.fsicAppNo) && normalize(r.ownerName));
 
+    const toAdd = mapped.filter((r) => normalize(r.fsicAppNo) && normalize(r.ownerName));
     writeJSON(DATA_FILE, [...current, ...toAdd]);
 
-    return res.json({ success: true, imported: toAdd.length, skipped: mapped.length - toAdd.length, sheet: sheetName });
+    return res.json({
+      success: true,
+      imported: toAdd.length,
+      skipped: mapped.length - toAdd.length,
+      sheet: sheetName,
+    });
   } catch (e) {
     console.error("POST /import/excel error:", e);
     return res.status(500).json({ success: false, message: "Failed to import Excel." });
@@ -433,7 +475,7 @@ app.post("/records", (req, res) => {
   }
 });
 
-// ✅ FIXED DELETE (string compare)
+// ✅ DELETE (string compare)
 app.delete("/records/:id", (req, res) => {
   try {
     const id = sid(req.params.id);
@@ -448,7 +490,7 @@ app.delete("/records/:id", (req, res) => {
   }
 });
 
-// ✅ FIXED UPDATE (string compare)
+// ✅ UPDATE (string compare)
 app.put("/records/:id", (req, res) => {
   try {
     const id = sid(req.params.id);
@@ -523,7 +565,6 @@ app.get("/archive/:month", (req, res) => {
   res.json(list);
 });
 
-// ✅ FIXED archive delete (string compare)
 app.delete("/archive/:month/:id", (req, res) => {
   try {
     const month = String(req.params.month || "");
@@ -556,7 +597,7 @@ app.post("/documents", (req, res) => {
     const newDoc = {
       id: Date.now(),
       createdAt: new Date().toISOString(),
-      ...pickAllowedDocumentFields(req.body || {}),
+      ...pickAllowedDocumentFields(req.body || {}), // ✅ converts dates
     };
     docs.push(newDoc);
     writeJSON(DOCUMENTS_FILE, docs);
@@ -567,7 +608,6 @@ app.post("/documents", (req, res) => {
   }
 });
 
-// ✅ FIXED documents update (string compare)
 app.put("/documents/:id", (req, res) => {
   try {
     const id = sid(req.params.id);
@@ -578,7 +618,7 @@ app.put("/documents/:id", (req, res) => {
 
     docs[idx] = {
       ...docs[idx],
-      ...pickAllowedDocumentFields({ ...docs[idx], ...(req.body || {}) }),
+      ...pickAllowedDocumentFields({ ...docs[idx], ...(req.body || {}) }), // ✅ converts dates
       updatedAt: new Date().toISOString(),
     };
 
@@ -590,7 +630,6 @@ app.put("/documents/:id", (req, res) => {
   }
 });
 
-// ✅ FIXED documents delete (string compare)
 app.delete("/documents/:id", (req, res) => {
   try {
     const id = sid(req.params.id);
@@ -612,6 +651,7 @@ app.get("/records/renewed/:entityKey", (req, res) => {
   try {
     const ek = normalizeEntityKey(decodeURIComponent(req.params.entityKey || ""));
     if (!ek) return res.json({ success: true, record: null });
+
     const latest = getLatestRenewedByEntityKey(ek);
     return res.json({ success: true, record: latest || null });
   } catch (e) {
@@ -644,7 +684,6 @@ app.get("/records/renewed", (req, res) => {
   }
 });
 
-// ✅ FIXED renewed delete (string compare)
 app.delete("/records/renewed/:id", (req, res) => {
   try {
     const id = sid(req.params.id);
@@ -678,17 +717,32 @@ app.post("/records/renew", (req, res) => {
       normalizeEntityKey(updatedRecord?.entityKey);
 
     if (!entityKey || !oldRecord || !updatedRecord) {
-      return res.status(400).json({ success: false, message: "Missing payload (entityKey/oldRecord/updatedRecord)" });
+      return res.status(400).json({
+        success: false,
+        message: "Missing payload (entityKey/oldRecord/updatedRecord)",
+      });
     }
 
     const now = new Date().toISOString();
     const history = readJSON(HISTORY_FILE) || [];
 
-    history.push({ entityKey, source: source || "Unknown", changedAt: now, action: "PREVIOUS", data: oldRecord });
+    history.push({
+      entityKey,
+      source: source || "Unknown",
+      changedAt: now,
+      action: "PREVIOUS",
+      data: oldRecord,
+    });
 
     const newRecord = buildRenewedRecord({ entityKey, updatedRecord });
 
-    history.push({ entityKey, source: "Renewed", changedAt: now, action: "RENEWED", data: newRecord });
+    history.push({
+      entityKey,
+      source: "Renewed",
+      changedAt: now,
+      action: "RENEWED",
+      data: newRecord,
+    });
 
     writeJSON(HISTORY_FILE, history);
 
@@ -836,7 +890,7 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
 
     const view = {
       FSIC_NUMBER: record.FSIC_NUMBER || record.FSIC_APP_NO || record.fsicAppNo || "",
-      DATE_INSPECTED: record.DATE_INSPECTED || record.dateInspected || "",
+      DATE_INSPECTED: excelDateToISO(record.DATE_INSPECTED || record.dateInspected || ""),
       NAME_OF_ESTABLISHMENT: record.NAME_OF_ESTABLISHMENT || record.ESTABLISHMENT_NAME || record.establishmentName || "",
       NAME_OF_OWNER: record.NAME_OF_OWNER || record.OWNERS_NAME || record.ownerName || "",
       ADDRESS: record.ADDRESS || record.BUSSINESS_ADDRESS || record.businessAddress || "",
@@ -844,17 +898,17 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
       BLDG_DESCRIPTION: record.BLDG_DESCRIPTION || record.BUILDING_DESC || record.buildingDesc || "",
       FSIC_VALIDITY: record.FSIC_VALIDITY || record.fsicValidity || "",
       OR_NUMBER: record.OR_NUMBER || record.orNumber || "",
-      OR_DATE: record.OR_DATE || record.orDate || "",
+      OR_DATE: excelDateToISO(record.OR_DATE || record.orDate || ""),
       OR_AMOUNT: record.OR_AMOUNT || record.orAmount || "",
 
       IO_NUMBER: record.IO_NUMBER || record.ioNumber || "",
-      IO_DATE: record.IO_DATE || record.ioDate || "",
+      IO_DATE: excelDateToISO(record.IO_DATE || record.ioDate || ""),
       TAXPAYER: record.TAXPAYER || record.OWNERS_NAME || record.ownerName || "",
       TRADE_NAME: record.TRADE_NAME || record.ESTABLISHMENT_NAME || record.establishmentName || "",
       CONTACT_: record.CONTACT_ || record.CONTACT_NUMBER || record.contactNumber || "",
 
       NFSI_NUMBER: record.NFSI_NUMBER || record.nfsiNumber || "",
-      NFSI_DATE: record.NFSI_DATE || record.nfsiDate || "",
+      NFSI_DATE: excelDateToISO(record.NFSI_DATE || record.nfsiDate || ""),
 
       OWNER: record.OWNER || record.OWNERS_NAME || record.ownerName || "",
       INSPECTORS: record.INSPECTORS || record.inspectors || "",
@@ -945,6 +999,7 @@ app.get("/documents/:id/:docType/pdf", (req, res) => {
 // -----------------------------
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Backend running on port ${PORT}`);
+  console.log("DATA_DIR:", DATA_DIR);
   console.log("PIN:", process.env.PIN ? "(set)" : "(default 1234)");
   console.log("SOFFICE_PATH:", process.env.SOFFICE_PATH || "(not set)");
 });
