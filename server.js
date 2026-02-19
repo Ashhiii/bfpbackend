@@ -284,5 +284,5 @@ app.get("/documents/:id/:docType/pdf", async (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Backend running on port ${PORT}`);
   console.log("SOFFICE_PATH:", process.env.SOFFICE_PATH || "(not set)");
-  console.log("Firestore Project:", process.env.FIREBASE_PROJECT_ID || "(missing)");
+  console.log("Firestore Project:", process.env.VITE_FB_PROJECT_ID || "(missing)");
 });
