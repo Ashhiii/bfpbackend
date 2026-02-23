@@ -1,8 +1,9 @@
-// server.js — BFP System Backend (FULL UPDATED)
-// ✅ Fix: Record/Document/Renewed "not found" (string+number ids supported)
-// ✅ Adds /renewed/:id/... PDF routes (your RenewedTable was calling missing endpoints)
-// ✅ Safer not-found messages with id
-// ✅ Keeps your existing features
+// server.js — BFP System Backend (FULL FIX)
+// ✅ CORS + OPTIONS
+// ✅ /health
+// ✅ PDF generation (LibreOffice) + clear errors
+// ✅ Records + Archive + Documents + Renew + Manager + Export
+// ✅ Excel import endpoints (/import/records, /import/documents, /import/excel)
 
 import express from "express";
 import cors from "cors";
@@ -33,9 +34,10 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
-app.options("*", cors());
+app.options("*", cors()); // ✅ IMPORTANT FOR PREFLIGHT
 app.use(express.json({ limit: "10mb" }));
 
+// multer memory upload
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 },
@@ -70,38 +72,19 @@ const ensureEntityKey = (r) => {
   const fsic = normalize(r.fsicAppNo || r.FSIC_APP_NO || r.FSIC_NUMBER);
   return { ...r, entityKey: fsic ? `fsic:${fsic}` : `rec:${r.id || Date.now()}` };
 };
+
 const normalizeEntityKey = (entityKey) => normalize(entityKey);
 
-// ✅ Find current or archived record by id (string OR number)
 const findRecordById = (id) => {
-  const sid = String(id);
-
-  let record = (readJSON(DATA_FILE) || []).find((r) => String(r.id) === sid);
+  let record = (readJSON(DATA_FILE) || []).find((r) => String(r.id) == String(id));
   if (record) return ensureEntityKey(record);
 
   const archive = readJSON(ARCHIVE_FILE) || {};
   for (const month of Object.keys(archive)) {
-    record = (archive[month] || []).find((r) => String(r.id) === sid);
+    record = (archive[month] || []).find((r) => String(r.id) == String(id));
     if (record) return ensureEntityKey(record);
   }
   return null;
-};
-
-// ✅ Find document by id (string OR number)
-const findDocById = (id) => {
-  const sid = String(id);
-  const docs = readJSON(DOCUMENTS_FILE) || [];
-  return docs.find((d) => String(d.id) === sid) || null;
-};
-
-// ✅ Find renewed record by its renewed record id (from history)
-const findRenewedById = (id) => {
-  const sid = String(id);
-  const history = readJSON(HISTORY_FILE) || [];
-  const renewed = history
-    .filter((h) => String(h.action || "").toUpperCase() === "RENEWED")
-    .map((h) => ensureEntityKey(h.data || {}));
-  return renewed.find((r) => String(r.id) === sid) || null;
 };
 
 const pickAllowedRecordFields = (obj = {}) => ({
@@ -165,7 +148,7 @@ const buildRenewedRecord = ({ entityKey, updatedRecord }) => {
   const now = new Date().toISOString();
 
   const newRecord = ensureEntityKey({
-    id: Date.now(), // renewed record id
+    id: Date.now(),
     entityKey,
     ...base,
     teamLeader: updatedRecord?.teamLeader || "",
@@ -214,7 +197,7 @@ const normHeader = (s) =>
 
 const makeId = () => {
   try {
-    return crypto.randomUUID(); // ✅ string IDs for excel imports
+    return crypto.randomUUID();
   } catch {
     return String(Date.now() + Math.floor(Math.random() * 100000));
   }
@@ -373,6 +356,7 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
       nullGetter: () => "",
     });
 
+    // map fields for templates (works with old caps + camelCase)
     const view = {
       FSIC_NUMBER: record.FSIC_NUMBER || record.FSIC_APP_NO || record.fsicAppNo || "",
       DATE_INSPECTED: record.DATE_INSPECTED || record.dateInspected || "",
@@ -418,7 +402,9 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
         console.log("stdout:", stdout);
         console.log("stderr:", stderr);
         try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
-        return res.status(500).send(`PDF conversion failed. ${String(stderr || err?.message || err)}`);
+        return res
+          .status(500)
+          .send(`PDF conversion failed. ${String(stderr || err?.message || err)}`);
       }
 
       const expectedPdf = outputDocx.replace(/\.docx$/i, ".pdf");
@@ -442,9 +428,7 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
   }
 };
 
-// -----------------------------
-// HEALTH
-// -----------------------------
+// ✅ health check (see if soffice + templates exist)
 app.get("/health", (req, res) => {
   const soffice = findSoffice();
   const templatesDir = path.join(__dirname, "templates");
@@ -523,7 +507,7 @@ app.post("/records", (req, res) => {
   try {
     const records = (readJSON(DATA_FILE) || []).map(ensureEntityKey);
     let newRecord = {
-      id: Date.now(), // manual add uses number id
+      id: Date.now(),
       createdAt: new Date().toISOString(),
       ...pickAllowedRecordFields(req.body || {}),
       entityKey: req.body?.entityKey,
@@ -538,13 +522,12 @@ app.post("/records", (req, res) => {
   }
 });
 
-// ✅ FIX: id compare as STRING (supports UUID too)
 app.put("/records/:id", (req, res) => {
   try {
-    const id = String(req.params.id);
+    const id = Number(req.params.id);
     const records = (readJSON(DATA_FILE) || []).map(ensureEntityKey);
-    const idx = records.findIndex((r) => String(r.id) === id);
-    if (idx === -1) return res.status(404).json({ success: false, message: `Record not found (id=${id})` });
+    const idx = records.findIndex((r) => Number(r.id) === id);
+    if (idx === -1) return res.status(404).json({ success: false, message: "Record not found" });
 
     const allowed = pickAllowedRecordFields(req.body || {});
     const teamLeader = req.body?.teamLeader ?? records[idx]?.teamLeader ?? "";
@@ -625,19 +608,12 @@ app.delete("/archive/:month/:id", (req, res) => {
   }
 });
 
-// -----------------------------
-// DOCUMENTS
-// -----------------------------
+// documents
 app.get("/documents", (req, res) => res.json(readJSON(DOCUMENTS_FILE) || []));
-
 app.post("/documents", (req, res) => {
   try {
     const docs = readJSON(DOCUMENTS_FILE) || [];
-    const newDoc = {
-      id: Date.now(), // manual add uses number id
-      createdAt: new Date().toISOString(),
-      ...pickAllowedDocumentFields(req.body || {}),
-    };
+    const newDoc = { id: Date.now(), createdAt: new Date().toISOString(), ...pickAllowedDocumentFields(req.body || {}) };
     docs.push(newDoc);
     writeJSON(DOCUMENTS_FILE, docs);
     res.json({ success: true, data: newDoc });
@@ -646,21 +622,14 @@ app.post("/documents", (req, res) => {
     res.status(500).json({ success: false, message: "Add document failed" });
   }
 });
-
-// ✅ FIX: id compare as STRING (supports UUID too)
 app.put("/documents/:id", (req, res) => {
   try {
-    const id = String(req.params.id);
+    const id = Number(req.params.id);
     const docs = readJSON(DOCUMENTS_FILE) || [];
-    const idx = docs.findIndex((d) => String(d.id) === id);
-    if (idx === -1) return res.status(404).json({ success: false, message: `Document not found (id=${id})` });
+    const idx = docs.findIndex((d) => Number(d.id) === id);
+    if (idx === -1) return res.status(404).json({ success: false, message: "Document not found" });
 
-    docs[idx] = {
-      ...docs[idx],
-      ...pickAllowedDocumentFields({ ...docs[idx], ...(req.body || {}) }),
-      updatedAt: new Date().toISOString(),
-    };
-
+    docs[idx] = { ...docs[idx], ...pickAllowedDocumentFields({ ...docs[idx], ...(req.body || {}) }), updatedAt: new Date().toISOString() };
     writeJSON(DOCUMENTS_FILE, docs);
     res.json({ success: true, data: docs[idx] });
   } catch (e) {
@@ -668,13 +637,12 @@ app.put("/documents/:id", (req, res) => {
     res.status(500).json({ success: false, message: "Update document failed" });
   }
 });
-
 app.delete("/documents/:id", (req, res) => {
   try {
-    const id = String(req.params.id);
+    const id = Number(req.params.id);
     const docs = readJSON(DOCUMENTS_FILE) || [];
     const before = docs.length;
-    const after = docs.filter((d) => String(d.id) !== id);
+    const after = docs.filter((d) => Number(d.id) !== id);
     writeJSON(DOCUMENTS_FILE, after);
     res.json({ success: true, deleted: before - after.length });
   } catch (e) {
@@ -683,9 +651,7 @@ app.delete("/documents/:id", (req, res) => {
   }
 });
 
-// -----------------------------
-// RENEWED
-// -----------------------------
+// renewed
 app.get("/records/renewed/:entityKey", (req, res) => {
   try {
     const ek = normalizeEntityKey(decodeURIComponent(req.params.entityKey || ""));
@@ -705,12 +671,7 @@ app.get("/records/renewed", (req, res) => {
       .filter((h) => String(h.action || "").toUpperCase() === "RENEWED")
       .map((h) => {
         const rec = ensureEntityKey(h.data || {});
-        return {
-          ...rec,
-          entityKey: h.entityKey || rec.entityKey,
-          renewedAt: h.changedAt || rec.renewedAt || "",
-          source: h.source || "Renewed",
-        };
+        return { ...rec, entityKey: h.entityKey || rec.entityKey, renewedAt: h.changedAt || rec.renewedAt || "", source: h.source || "Renewed" };
       })
       .sort((a, b) => String(b.renewedAt || "").localeCompare(String(a.renewedAt || "")));
     res.json({ success: true, records: renewedRecords });
@@ -782,16 +743,7 @@ app.get("/manager/items", (req, res) => {
     const month = normalize(req.query.month || "");
     const items = [];
     const pushItem = ({ kind, id, source, createdAt, changedAt, entityKey, data, month }) =>
-      items.push({
-        kind,
-        id,
-        source,
-        createdAt: createdAt || "",
-        changedAt: changedAt || "",
-        entityKey: entityKey || "",
-        month: month || "",
-        data: data || {},
-      });
+      items.push({ kind, id, source, createdAt: createdAt || "", changedAt: changedAt || "", entityKey: entityKey || "", month: month || "", data: data || {} });
 
     if (scope === "all" || scope === "current") {
       (readJSON(DATA_FILE) || []).map(ensureEntityKey).forEach((r) =>
@@ -843,14 +795,12 @@ app.post("/auth/pin", (req, res) => {
 });
 
 // -----------------------------
-// PDF ROUTES
+// PDF ROUTES (GET - open in new tab)
 // -----------------------------
-
-// FSIC Certificate (current + archive records)
+// FSIC Certificate
 app.get("/records/:id/certificate/:type/pdf", (req, res) => {
-  const id = String(req.params.id);
-  const record = findRecordById(id);
-  if (!record) return res.status(404).send(`Record not found (id=${id})`);
+  const record = findRecordById(req.params.id);
+  if (!record) return res.status(404).send("Record not found");
 
   const type = String(req.params.type || "").toLowerCase();
   const templateFile = type === "owner" ? "fsic-owner.docx" : "fsic-bfp.docx";
@@ -860,9 +810,8 @@ app.get("/records/:id/certificate/:type/pdf", (req, res) => {
 
 // IO / REINSPECTION / NFSI for records
 app.get("/records/:id/:docType/pdf", (req, res) => {
-  const id = String(req.params.id);
-  const record = findRecordById(id);
-  if (!record) return res.status(404).send(`Record not found (id=${id})`);
+  const record = findRecordById(req.params.id);
+  if (!record) return res.status(404).send("Record not found");
 
   const dt = String(req.params.docType || "").toLowerCase();
   let templateFile = "";
@@ -876,9 +825,8 @@ app.get("/records/:id/:docType/pdf", (req, res) => {
 
 // DOCUMENTS PDF generation
 app.get("/documents/:id/:docType/pdf", (req, res) => {
-  const id = String(req.params.id);
-  const doc = findDocById(id);
-  if (!doc) return res.status(404).send(`Document not found (id=${id})`);
+  const doc = (readJSON(DOCUMENTS_FILE) || []).find((r) => String(r.id) == String(req.params.id));
+  if (!doc) return res.status(404).send("Document not found");
 
   const dt = String(req.params.docType || "").toLowerCase();
   let templateFile = "";
@@ -888,34 +836,6 @@ app.get("/documents/:id/:docType/pdf", (req, res) => {
   else return res.status(400).send("Invalid type");
 
   generatePDF(doc, templateFile, `doc-${dt}-${doc.id}`, res);
-});
-
-// ✅ NEW: RENEWED PDF ROUTES (matches your RenewedTable)
-app.get("/renewed/:id/certificate/:type/pdf", (req, res) => {
-  const id = String(req.params.id);
-  const record = findRenewedById(id);
-  if (!record) return res.status(404).send(`Renewed record not found (id=${id})`);
-
-  const type = String(req.params.type || "").toLowerCase();
-  const templateFile = type === "owner" ? "fsic-owner.docx" : "fsic-bfp.docx";
-
-  generatePDF(record, templateFile, `renewed-fsic-${type}-${record.id}`, res);
-});
-
-// optional: renewed io/reinspection/nfsi
-app.get("/renewed/:id/:docType/pdf", (req, res) => {
-  const id = String(req.params.id);
-  const record = findRenewedById(id);
-  if (!record) return res.status(404).send(`Renewed record not found (id=${id})`);
-
-  const dt = String(req.params.docType || "").toLowerCase();
-  let templateFile = "";
-  if (dt === "io") templateFile = "officers.docx";
-  else if (dt === "reinspection") templateFile = "reinspection.docx";
-  else if (dt === "nfsi") templateFile = "nfsi-form.docx";
-  else return res.status(400).send("Invalid type");
-
-  generatePDF(record, templateFile, `renewed-${dt}-${record.id}`, res);
 });
 
 app.get("/", (req, res) => res.send("✅ BFP Backend Running"));
