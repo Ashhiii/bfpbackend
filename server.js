@@ -245,7 +245,7 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
       FSIC_NUMBER: record.FSIC_NUMBER || record.FSIC_APP_NO || record.fsicAppNo || "",
       DATE_INSPECTED: record.DATE_INSPECTED || record.dateInspected || "",
       NAME_OF_ESTABLISHMENT:
-        record.NAME_OF_ESTABLISHMENT || record.ESTABLISHMENT_NAME || record.establishmentName || "",
+      record.NAME_OF_ESTABLISHMENT || record.ESTABLISHMENT_NAME || record.establishmentName || "",
       NAME_OF_OWNER: record.NAME_OF_OWNER || record.OWNERS_NAME || record.ownerName || "",
       ADDRESS: record.ADDRESS || record.BUSSINESS_ADDRESS || record.businessAddress || "",
       FLOOR_AREA: record.FLOOR_AREA || record.floorArea || "",
