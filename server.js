@@ -282,7 +282,7 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
       NFSI_DATE: record.NFSI_DATE || record.nfsiDate || "",
 
       OWNER: record.OWNER || record.OWNERS_NAME || record.ownerName || "",
-
+      TEAM_LEADER: record.teamLeader || record.TEAM_LEADER || "",
       TEAM_LEADER_SERIAL: record.teamLeaderSerial || record.TEAM_LEADER_SERIAL || "",
       INSPECTORS: record.INSPECTORS || record.inspectors || "",
 
