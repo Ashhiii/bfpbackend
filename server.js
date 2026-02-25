@@ -2,8 +2,8 @@
 // ✅ CORS + OPTIONS
 // ✅ /health
 // ✅ PDF generation (LibreOffice) + clear errors
-// ✅ Firestore lookup for Records + Archive + Documents (NO MORE records.json mismatch)
-// ✅ Excel import endpoints still kept (optional) BUT PDF uses Firestore
+// ✅ Firestore lookup for Records + Archive + Documents
+// ✅ NTC_DATE + other dates output as "January 2, 2026" (NOT 2026-01-02)
 
 import express from "express";
 import cors from "cors";
@@ -47,10 +47,6 @@ const upload = multer({
 // -----------------------------
 // FIREBASE ADMIN (Option B)
 // -----------------------------
-// Put these in backend .env or Render env vars:
-// FIREBASE_PROJECT_ID=xxx
-// FIREBASE_CLIENT_EMAIL=xxx@xxx.iam.gserviceaccount.com
-// FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 if (!admin.apps.length) {
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
@@ -102,6 +98,49 @@ const ensureEntityKey = (r) => {
 };
 
 const normalizeEntityKey = (entityKey) => normalize(entityKey);
+
+// ✅ convert any date value -> "January 2, 2026"
+const toLongDate = (v) => {
+  if (!v) return "";
+
+  // Firestore Timestamp (admin)
+  if (typeof v === "object" && typeof v.toDate === "function") {
+    v = v.toDate();
+  }
+
+  let d = null;
+
+  // Date object
+  if (v instanceof Date) d = v;
+
+  // string "YYYY-MM-DD" or ISO string
+  if (!d && typeof v === "string") {
+    const s = v.trim();
+
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) {
+      d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    } else {
+      const tmp = new Date(s);
+      if (!Number.isNaN(tmp.getTime())) d = tmp;
+    }
+  }
+
+  // number millis
+  if (!d && typeof v === "number") {
+    const tmp = new Date(v);
+    if (!Number.isNaN(tmp.getTime())) d = tmp;
+  }
+
+  if (!d || Number.isNaN(d.getTime())) return String(v);
+
+  const months = [
+    "January","February","March","April","May","June",
+    "July","August","September","October","November","December",
+  ];
+
+  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+};
 
 const pickAllowedRecordFields = (obj = {}) => ({
   appno: obj.appno ?? obj.APPLICATION_NO ?? "",
@@ -159,7 +198,7 @@ const pickAllowedDocumentFields = (obj = {}) => ({
   nfsiDate: obj.nfsiDate ?? obj.NFSI_DATE ?? "",
 
   inspectors: obj.inspectors ?? obj.INSPECTORS ?? "",
-  
+
   teamLeader: obj.teamLeader ?? obj.TEAM_LEADER ?? "",
   teamLeaderSerial: obj.teamLeaderSerial ?? obj.TEAM_LEADER_SERIAL ?? "",
 
@@ -177,21 +216,20 @@ const pickAllowedDocumentFields = (obj = {}) => ({
 });
 
 // -----------------------------
-// 🔥 FIRESTORE LOOKUPS (THIS FIXES "Record not found")
+// 🔥 FIRESTORE LOOKUPS
 // Assumed structure:
-// - current records: collection "records" (doc id = record id)
-// - documents: collection "documents" (doc id = document id)
-// - archive: collection "archive" -> doc {YYYY-MM} -> subcollection "records" -> doc id = record id
-// If lahi imo structure, ingna ko para i-adjust.
+// - current: "records"
+// - documents: "documents"
+// - archive: "archive" -> doc {YYYY-MM} -> subcollection "records"
 // -----------------------------
 const findRecordById = async (id) => {
   if (!fdb) return null;
 
-  // 1) current records
+  // 1) current
   const snap = await fdb.collection("records").doc(String(id)).get();
   if (snap.exists) return ensureEntityKey({ id: snap.id, ...snap.data() });
 
-  // 2) archive/{YYYY-MM}/records/{id}
+  // 2) archive
   const monthsSnap = await fdb.collection("archive").get();
   for (const m of monthsSnap.docs) {
     const recSnap = await fdb
@@ -259,28 +297,36 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
     });
 
     const view = {
+      // FSIC
       FSIC_NUMBER: record.FSIC_NUMBER || record.FSIC_APP_NO || record.fsicAppNo || "",
-      DATE_INSPECTED: record.DATE_INSPECTED || record.dateInspected || "",
+      DATE_INSPECTED: toLongDate(record.DATE_INSPECTED || record.dateInspected || ""),
       NAME_OF_ESTABLISHMENT:
-      record.NAME_OF_ESTABLISHMENT || record.ESTABLISHMENT_NAME || record.establishmentName || "",
+        record.NAME_OF_ESTABLISHMENT || record.ESTABLISHMENT_NAME || record.establishmentName || "",
       NAME_OF_OWNER: record.NAME_OF_OWNER || record.OWNERS_NAME || record.ownerName || "",
       ADDRESS: record.ADDRESS || record.BUSSINESS_ADDRESS || record.businessAddress || "",
       FLOOR_AREA: record.FLOOR_AREA || record.floorArea || "",
       BLDG_DESCRIPTION: record.BLDG_DESCRIPTION || record.BUILDING_DESC || record.buildingDesc || "",
-      FSIC_VALIDITY: record.FSIC_VALIDITY || record.fsicValidity || "",
+      FSIC_VALIDITY: toLongDate(record.FSIC_VALIDITY || record.fsicValidity || ""),
       OR_NUMBER: record.OR_NUMBER || record.orNumber || "",
-      OR_DATE: record.OR_DATE || record.orDate || "",
+      OR_DATE: toLongDate(record.OR_DATE || record.orDate || ""),
       OR_AMOUNT: record.OR_AMOUNT || record.orAmount || "",
 
+      // IO / etc
       IO_NUMBER: record.IO_NUMBER || record.ioNumber || "",
-      IO_DATE: record.IO_DATE || record.ioDate || "",
+      IO_DATE: toLongDate(record.IO_DATE || record.ioDate || ""),
       TAXPAYER: record.TAXPAYER || record.OWNERS_NAME || record.ownerName || "",
       TRADE_NAME: record.TRADE_NAME || record.ESTABLISHMENT_NAME || record.establishmentName || "",
       CONTACT_: record.CONTACT_ || record.CONTACT_NUMBER || record.contactNumber || "",
 
+      // NFSI
       NFSI_NUMBER: record.NFSI_NUMBER || record.nfsiNumber || "",
-      NFSI_DATE: record.NFSI_DATE || record.nfsiDate || "",
+      NFSI_DATE: toLongDate(record.NFSI_DATE || record.nfsiDate || ""),
 
+      // NTC ✅
+      NTC_NUMBER: record.ntcNumber || record.NTC_NUMBER || "",
+      NTC_DATE: toLongDate(record.ntcDate || record.NTC_DATE || ""),
+
+      // Inspectors / Team
       OWNER: record.OWNER || record.OWNERS_NAME || record.ownerName || "",
       TEAM_LEADER: record.teamLeader || record.TEAM_LEADER || "",
       TEAM_LEADER_SERIAL: record.teamLeaderSerial || record.TEAM_LEADER_SERIAL || "",
@@ -295,10 +341,7 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
       INSPECTOR_3: record.inspector3 || record.INSPECTOR_3 || "",
       INSPECTOR_3_SERIAL: record.inspector3Serial || record.INSPECTOR_3_SERIAL || "",
 
-      NTC_NUMBER: record.ntcNumber || record.NTC_NUMBER || "",
-      NTC_DATE: record.ntcDate || record.NTC_DATE || "",
-
-      DATE: new Date().toLocaleDateString(),
+      DATE: toLongDate(new Date()),
       CHIEF: record.CHIEF || record.chiefName || "",
       MARSHAL: record.MARSHAL || record.marshalName || "",
     };
@@ -315,17 +358,15 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
         console.log("LibreOffice ERROR:", err);
         console.log("stdout:", stdout);
         console.log("stderr:", stderr);
-        try {
-          if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
-        } catch {}
-        return res.status(500).send(`PDF conversion failed. ${String(stderr || err?.message || err)}`);
+        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
+        return res
+          .status(500)
+          .send(`PDF conversion failed. ${String(stderr || err?.message || err)}`);
       }
 
       const expectedPdf = outputDocx.replace(/\.docx$/i, ".pdf");
       if (!fs.existsSync(expectedPdf)) {
-        try {
-          if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
-        } catch {}
+        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
         return res.status(500).send("PDF file not produced after conversion.");
       }
 
@@ -333,19 +374,13 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
       res.setHeader("Content-Disposition", `attachment; filename="${filenameBase}.pdf"`);
 
       res.download(expectedPdf, () => {
-        try {
-          if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
-        } catch {}
-        try {
-          if (fs.existsSync(expectedPdf)) fs.unlinkSync(expectedPdf);
-        } catch {}
+        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
+        try { if (fs.existsSync(expectedPdf)) fs.unlinkSync(expectedPdf); } catch {}
       });
     });
   } catch (e) {
     console.log("PDF generation failed:", e);
-    try {
-      if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
-    } catch {}
+    try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
     return res.status(500).send(`PDF generation failed (templater). ${e.message}`);
   }
 };
@@ -441,6 +476,9 @@ const mapExcelRowToRecord = (row = {}) => {
     nfsiNumber: String(get("nfsinumber", "nfsi#", "nfsi") || ""),
     nfsiDate: excelDateToISO(get("nfsidate") || ""),
 
+    ntcNumber: String(get("ntcnumber", "ntc#", "ntc") || ""),
+    ntcDate: excelDateToISO(get("ntcdate") || ""),
+
     fsicValidity: String(get("fsicvalidity", "validity") || ""),
     defects: String(get("defects", "violations") || ""),
     inspectors: String(get("inspectors", "inspector") || ""),
@@ -477,8 +515,7 @@ const readExcelRows = (req) => {
 };
 
 // -----------------------------
-// (OPTIONAL) EXCEL IMPORT ENDPOINTS (still writes to JSON)
-// If you want Firestore import instead, tell me and I’ll convert these to Firestore writes.
+// (OPTIONAL) EXCEL IMPORT ENDPOINTS
 // -----------------------------
 app.post("/import/records", upload.single("file"), (req, res) => {
   try {
@@ -545,8 +582,8 @@ app.get("/records/:id/:docType/pdf", async (req, res) => {
 
 // DOCUMENTS PDF generation (Firestore)
 app.get("/documents/:id/:docType/pdf", async (req, res) => {
-  const doc = await findDocumentById(req.params.id);
-  if (!doc) return res.status(404).send("Document not found");
+  const docu = await findDocumentById(req.params.id);
+  if (!docu) return res.status(404).send("Document not found");
 
   const dt = String(req.params.docType || "").toLowerCase();
   let templateFile = "";
@@ -555,7 +592,7 @@ app.get("/documents/:id/:docType/pdf", async (req, res) => {
   else if (dt === "nfsi") templateFile = "nfsi-form.docx";
   else return res.status(400).send("Invalid type");
 
-  generatePDF(doc, templateFile, `doc-${dt}-${doc.id}`, res);
+  generatePDF(docu, templateFile, `doc-${dt}-${docu.id}`, res);
 });
 
 app.get("/", (req, res) => res.send("✅ BFP Backend Running (Firestore Option B)"));
