@@ -119,6 +119,9 @@ const pickAllowedRecordFields = (obj = {}) => ({
   nfsiNumber: obj.nfsiNumber ?? obj.NFSI_NUMBER ?? "",
   nfsiDate: obj.nfsiDate ?? obj.NFSI_DATE ?? "",
 
+  ntcNumber: obj.ntcNumber ?? obj.NTC_NUMBER ?? "",
+  ntcDate: obj.ntcDate ?? obj.NTC_DATE ?? "",
+
   fsicValidity: obj.fsicValidity ?? obj.FSIC_VALIDITY ?? "",
   defects: obj.defects ?? obj.DEFECTS ?? "",
   inspectors: obj.inspectors ?? obj.INSPECTORS ?? "",
@@ -148,6 +151,9 @@ const pickAllowedDocumentFields = (obj = {}) => ({
 
   ioNumber: obj.ioNumber ?? obj.IO_NUMBER ?? "",
   ioDate: obj.ioDate ?? obj.IO_DATE ?? "",
+
+  ntcNumber: obj.ntcNumber ?? obj.NTC_NUMBER ?? "",
+  ntcDate: obj.ntcDate ?? obj.NTC_DATE ?? "",
 
   nfsiNumber: obj.nfsiNumber ?? obj.NFSI_NUMBER ?? "",
   nfsiDate: obj.nfsiDate ?? obj.NFSI_DATE ?? "",
@@ -263,6 +269,9 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
 
       NFSI_NUMBER: record.NFSI_NUMBER || record.nfsiNumber || "",
       NFSI_DATE: record.NFSI_DATE || record.nfsiDate || "",
+
+      NTC_NUMBER: record.NTC_NUMBER || record.ntcNumber || "",
+      NTC_DATE: record.NTC_DATE || record.ntcDate || "",
 
       OWNER: record.OWNER || record.OWNERS_NAME || record.ownerName || "",
       INSPECTORS: record.INSPECTORS || record.inspectors || "",
