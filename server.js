@@ -159,7 +159,18 @@ const pickAllowedDocumentFields = (obj = {}) => ({
   nfsiDate: obj.nfsiDate ?? obj.NFSI_DATE ?? "",
 
   inspectors: obj.inspectors ?? obj.INSPECTORS ?? "",
+  
   teamLeader: obj.teamLeader ?? obj.TEAM_LEADER ?? "",
+  teamLeaderSerial: obj.teamLeaderSerial ?? obj.TEAM_LEADER_SERIAL ?? "",
+
+  inspector1: obj.inspector1 ?? obj.INSPECTOR_1 ?? "",
+  inspector1Serial: obj.inspector1Serial ?? obj.INSPECTOR_1_SERIAL ?? "",
+
+  inspector2: obj.inspector2 ?? obj.INSPECTOR_2 ?? "",
+  inspector2Serial: obj.inspector2Serial ?? obj.INSPECTOR_2_SERIAL ?? "",
+
+  inspector3: obj.inspector3 ?? obj.INSPECTOR_3 ?? "",
+  inspector3Serial: obj.inspector3Serial ?? obj.INSPECTOR_3_SERIAL ?? "",
 
   chiefName: obj.chiefName ?? obj.CHIEF ?? "",
   marshalName: obj.marshalName ?? obj.MARSHAL ?? "",
@@ -270,12 +281,22 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
       NFSI_NUMBER: record.NFSI_NUMBER || record.nfsiNumber || "",
       NFSI_DATE: record.NFSI_DATE || record.nfsiDate || "",
 
-      NTC_NUMBER: record.NTC_NUMBER || record.ntcNumber || "",
-      NTC_DATE: record.NTC_DATE || record.ntcDate || "",
-
       OWNER: record.OWNER || record.OWNERS_NAME || record.ownerName || "",
+
+      TEAM_LEADER_SERIAL: record.teamLeaderSerial || record.TEAM_LEADER_SERIAL || "",
       INSPECTORS: record.INSPECTORS || record.inspectors || "",
-      TEAM_LEADER: record.TEAM_LEADER || record.teamLeader || "",
+
+      INSPECTOR_1: record.inspector1 || record.INSPECTOR_1 || "",
+      INSPECTOR_1_SERIAL: record.inspector1Serial || record.INSPECTOR_1_SERIAL || "",
+
+      INSPECTOR_2: record.inspector2 || record.INSPECTOR_2 || "",
+      INSPECTOR_2_SERIAL: record.inspector2Serial || record.INSPECTOR_2_SERIAL || "",
+
+      INSPECTOR_3: record.inspector3 || record.INSPECTOR_3 || "",
+      INSPECTOR_3_SERIAL: record.inspector3Serial || record.INSPECTOR_3_SERIAL || "",
+
+      NTC_NUMBER: record.ntcNumber || record.NTC_NUMBER || "",
+      NTC_DATE: record.ntcDate || record.NTC_DATE || "",
 
       DATE: new Date().toLocaleDateString(),
       CHIEF: record.CHIEF || record.chiefName || "",
