@@ -211,6 +211,12 @@ const pickAllowedDocumentFields = (obj = {}) => ({
   inspector3: obj.inspector3 ?? obj.INSPECTOR_3 ?? "",
   inspector3Serial: obj.inspector3Serial ?? obj.INSPECTOR_3_SERIAL ?? "",
 
+  inspector4: obj.inspector4 ?? obj.INSPECTOR_4 ?? "",
+  inspector4Serial: obj.inspector4Serial ?? obj.INSPECTOR_4_SERIAL ?? "",
+
+  inspector5: obj.inspector5 ?? obj.INSPECTOR_5 ?? "",
+  inspector5Serial: obj.inspector5Serial ?? obj.INSPECTOR_5_SERIAL ?? "",
+
   chiefName: obj.chiefName ?? obj.CHIEF ?? "",
   marshalName: obj.marshalName ?? obj.MARSHAL ?? "",
 });
@@ -340,6 +346,12 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
 
       INSPECTOR_3: record.inspector3 || record.INSPECTOR_3 || "",
       INSPECTOR_3_SERIAL: record.inspector3Serial || record.INSPECTOR_3_SERIAL || "",
+
+      INSPECTOR_4: record.inspector4 || record.INSPECTOR_4 || "",
+      INSPECTOR_4_SERIAL: record.inspector4Serial || record.INSPECTOR_4_SERIAL || "",
+      
+      INSPECTOR_5: record.inspector5 || record.INSPECTOR_5 || "",
+      INSPECTOR_5_SERIAL: record.inspector5Serial || record.INSPECTOR_5_SERIAL || "",
 
       DATE: toLongDate(new Date()),
       CHIEF: record.CHIEF || record.chiefName || "",
