@@ -304,10 +304,11 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
 
     const view = {
       // FSIC
-      FSIC_NUMBER: record.FSIC_NUMBER || record.FSIC_APP_NO || record.fsicAppNo || "",
+      FSIC_NUMBER: record.FSIC_NUMBER || record.FSIC_NUMBER || record.fsicNo || "",
+      FSIC_APP_NO: record.FSIC_APP_NO || record.FSIC_APP_NO || record.fsicAppNo || "",
       DATE_INSPECTED: toLongDate(record.DATE_INSPECTED || record.dateInspected || ""),
       NAME_OF_ESTABLISHMENT:
-        record.NAME_OF_ESTABLISHMENT || record.ESTABLISHMENT_NAME || record.establishmentName || "",
+      record.NAME_OF_ESTABLISHMENT || record.ESTABLISHMENT_NAME || record.establishmentName || "",
       NAME_OF_OWNER: record.NAME_OF_OWNER || record.OWNERS_NAME || record.ownerName || "",
       ADDRESS: record.ADDRESS || record.BUSSINESS_ADDRESS || record.businessAddress || "",
       FLOOR_AREA: record.FLOOR_AREA || record.floorArea || "",
@@ -349,7 +350,7 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
 
       INSPECTOR_4: record.inspector4 || record.INSPECTOR_4 || "",
       INSPECTOR_4_SERIAL: record.inspector4Serial || record.INSPECTOR_4_SERIAL || "",
-      
+
       INSPECTOR_5: record.inspector5 || record.INSPECTOR_5 || "",
       INSPECTOR_5_SERIAL: record.inspector5Serial || record.INSPECTOR_5_SERIAL || "",
 
