@@ -142,6 +142,31 @@ const toLongDate = (v) => {
   return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 };
 
+
+
+// ✅ Nature of Inspection underline logic
+const buildNatureMarks = (natureValue = "") => {
+  const nature = String(natureValue || "")
+    .toUpperCase()
+    .replace(/-/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const underline = "_____________________";
+
+  const hasOccupancy =
+    nature.includes("OCCUPANCY") ||
+    nature.includes("CERTIFICATE OF OCCUPANCY");
+
+  const hasNew = /\bNEW\b/.test(nature);
+  const hasRenew = nature.includes("RENEW");
+
+  return {
+    BP_UNDERLINE: hasNew || hasRenew ? underline : "",
+  };
+};
+
+
 const pickAllowedRecordFields = (obj = {}) => ({
   appno: obj.appno ?? obj.APPLICATION_NO ?? "",
   fsicAppNo: obj.fsicAppNo ?? obj.FSIC_APP_NO ?? obj.FSIC_NUMBER ?? "",
