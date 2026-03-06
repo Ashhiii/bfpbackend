@@ -1,10 +1,3 @@
-// server.js — BFP System Backend (FULL FIX + FIRESTORE OPTION B)
-// ✅ CORS + OPTIONS
-// ✅ /health
-// ✅ PDF generation (LibreOffice) + clear errors
-// ✅ Firestore lookup for Records + Archive + Documents
-// ✅ NTC_DATE + other dates output as "January 2, 2026" (NOT 2026-01-02)
-
 import express from "express";
 import cors from "cors";
 import fs from "fs";
@@ -38,14 +31,13 @@ app.use(
 app.options("*", cors());
 app.use(express.json({ limit: "10mb" }));
 
-// multer memory upload
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 },
 });
 
 // -----------------------------
-// FIREBASE ADMIN (Option B)
+// FIREBASE ADMIN
 // -----------------------------
 if (!admin.apps.length) {
   const projectId = process.env.FIREBASE_PROJECT_ID;
@@ -64,10 +56,11 @@ if (!admin.apps.length) {
     });
   }
 }
+
 const fdb = admin.apps.length ? admin.firestore() : null;
 
 // -----------------------------
-// OPTIONAL JSON FILES (kept for imports/export if you still want local fallback)
+// OPTIONAL JSON FILES
 // -----------------------------
 const DATA_FILE = path.join(__dirname, "records.json");
 const ARCHIVE_FILE = path.join(__dirname, "archive.json");
@@ -75,8 +68,11 @@ const DOCUMENTS_FILE = path.join(__dirname, "documents.json");
 const HISTORY_FILE = path.join(__dirname, "history.json");
 
 const ensureFile = (file, defaultData) => {
-  if (!fs.existsSync(file)) fs.writeFileSync(file, JSON.stringify(defaultData, null, 2));
+  if (!fs.existsSync(file)) {
+    fs.writeFileSync(file, JSON.stringify(defaultData, null, 2));
+  }
 };
+
 ensureFile(DATA_FILE, []);
 ensureFile(ARCHIVE_FILE, {});
 ensureFile(DOCUMENTS_FILE, []);
@@ -99,21 +95,17 @@ const ensureEntityKey = (r) => {
 
 const normalizeEntityKey = (entityKey) => normalize(entityKey);
 
-// ✅ convert any date value -> "January 2, 2026"
 const toLongDate = (v) => {
   if (!v) return "";
 
-  // Firestore Timestamp (admin)
   if (typeof v === "object" && typeof v.toDate === "function") {
     v = v.toDate();
   }
 
   let d = null;
 
-  // Date object
   if (v instanceof Date) d = v;
 
-  // string "YYYY-MM-DD" or ISO string
   if (!d && typeof v === "string") {
     const s = v.trim();
 
@@ -126,7 +118,6 @@ const toLongDate = (v) => {
     }
   }
 
-  // number millis
   if (!d && typeof v === "number") {
     const tmp = new Date(v);
     if (!Number.isNaN(tmp.getTime())) d = tmp;
@@ -135,8 +126,18 @@ const toLongDate = (v) => {
   if (!d || Number.isNaN(d.getTime())) return String(v);
 
   const months = [
-    "January","February","March","April","May","June",
-    "July","August","September","October","November","December",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
   ];
 
   return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
@@ -222,20 +223,14 @@ const pickAllowedDocumentFields = (obj = {}) => ({
 });
 
 // -----------------------------
-// 🔥 FIRESTORE LOOKUPS
-// Assumed structure:
-// - current: "records"
-// - documents: "documents"
-// - archive: "archive" -> doc {YYYY-MM} -> subcollection "records"
+// FIRESTORE LOOKUPS
 // -----------------------------
 const findRecordById = async (id) => {
   if (!fdb) return null;
 
-  // 1) current
   const snap = await fdb.collection("records").doc(String(id)).get();
   if (snap.exists) return ensureEntityKey({ id: snap.id, ...snap.data() });
 
-  // 2) archive
   const monthsSnap = await fdb.collection("archive").get();
   for (const m of monthsSnap.docs) {
     const recSnap = await fdb
@@ -245,7 +240,9 @@ const findRecordById = async (id) => {
       .doc(String(id))
       .get();
 
-    if (recSnap.exists) return ensureEntityKey({ id: recSnap.id, ...recSnap.data() });
+    if (recSnap.exists) {
+      return ensureEntityKey({ id: recSnap.id, ...recSnap.data() });
+    }
   }
 
   return null;
@@ -259,7 +256,7 @@ const findDocumentById = async (id) => {
 };
 
 // -----------------------------
-// PDF (LibreOffice)
+// PDF
 // -----------------------------
 const findSoffice = () => {
   const envPath = process.env.SOFFICE_PATH;
@@ -270,7 +267,11 @@ const findSoffice = () => {
     "/usr/bin/soffice",
     "/usr/lib/libreoffice/program/soffice",
   ];
-  for (const p of candidates) if (fs.existsSync(p)) return p;
+
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+
   return null;
 };
 
@@ -303,12 +304,14 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
     });
 
     const view = {
-      // FSIC
-      FSIC_NUMBER: record.FSIC_NUMBER || record.FSIC_NUMBER || record.fsicNo || "",
-      FSIC_APP_NO: record.FSIC_APP_NO || record.FSIC_APP_NO || record.fsicAppNo || "",
+      FSIC_NUMBER: record.FSIC_NUMBER || record.fsicNo || "",
+      FSIC_APP_NO: record.FSIC_APP_NO || record.fsicAppNo || "",
       DATE_INSPECTED: toLongDate(record.DATE_INSPECTED || record.dateInspected || ""),
       NAME_OF_ESTABLISHMENT:
-      record.NAME_OF_ESTABLISHMENT || record.ESTABLISHMENT_NAME || record.establishmentName || "",
+        record.NAME_OF_ESTABLISHMENT ||
+        record.ESTABLISHMENT_NAME ||
+        record.establishmentName ||
+        "",
       NAME_OF_OWNER: record.NAME_OF_OWNER || record.OWNERS_NAME || record.ownerName || "",
       ADDRESS: record.ADDRESS || record.BUSSINESS_ADDRESS || record.businessAddress || "",
       FLOOR_AREA: record.FLOOR_AREA || record.floorArea || "",
@@ -318,22 +321,18 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
       OR_DATE: toLongDate(record.OR_DATE || record.orDate || ""),
       OR_AMOUNT: record.OR_AMOUNT || record.orAmount || "",
 
-      // IO / etc
       IO_NUMBER: record.IO_NUMBER || record.ioNumber || "",
       IO_DATE: toLongDate(record.IO_DATE || record.ioDate || ""),
       TAXPAYER: record.TAXPAYER || record.OWNERS_NAME || record.ownerName || "",
       TRADE_NAME: record.TRADE_NAME || record.ESTABLISHMENT_NAME || record.establishmentName || "",
       CONTACT_: record.CONTACT_ || record.CONTACT_NUMBER || record.contactNumber || "",
 
-      // NFSI
       NFSI_NUMBER: record.NFSI_NUMBER || record.nfsiNumber || "",
       NFSI_DATE: toLongDate(record.NFSI_DATE || record.nfsiDate || ""),
 
-      // NTC ✅
       NTC_NUMBER: record.ntcNumber || record.NTC_NUMBER || "",
       NTC_DATE: toLongDate(record.ntcDate || record.NTC_DATE || ""),
 
-      // Inspectors / Team
       OWNER: record.OWNER || record.OWNERS_NAME || record.ownerName || "",
       TEAM_LEADER: record.teamLeader || record.TEAM_LEADER || "",
       TEAM_LEADER_SERIAL: record.teamLeaderSerial || record.TEAM_LEADER_SERIAL || "",
@@ -371,7 +370,9 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
         console.log("LibreOffice ERROR:", err);
         console.log("stdout:", stdout);
         console.log("stderr:", stderr);
-        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
+        try {
+          if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
+        } catch {}
         return res
           .status(500)
           .send(`PDF conversion failed. ${String(stderr || err?.message || err)}`);
@@ -379,7 +380,9 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
 
       const expectedPdf = outputDocx.replace(/\.docx$/i, ".pdf");
       if (!fs.existsSync(expectedPdf)) {
-        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
+        try {
+          if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
+        } catch {}
         return res.status(500).send("PDF file not produced after conversion.");
       }
 
@@ -387,18 +390,26 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
       res.setHeader("Content-Disposition", `attachment; filename="${filenameBase}.pdf"`);
 
       res.download(expectedPdf, () => {
-        try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
-        try { if (fs.existsSync(expectedPdf)) fs.unlinkSync(expectedPdf); } catch {}
+        try {
+          if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
+        } catch {}
+        try {
+          if (fs.existsSync(expectedPdf)) fs.unlinkSync(expectedPdf);
+        } catch {}
       });
     });
   } catch (e) {
     console.log("PDF generation failed:", e);
-    try { if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx); } catch {}
+    try {
+      if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
+    } catch {}
     return res.status(500).send(`PDF generation failed (templater). ${e.message}`);
   }
 };
 
-// ✅ health check
+// -----------------------------
+// HEALTH
+// -----------------------------
 app.get("/health", async (req, res) => {
   const soffice = findSoffice();
   const templatesDir = path.join(__dirname, "templates");
@@ -424,7 +435,7 @@ app.get("/health", async (req, res) => {
 });
 
 // -----------------------------
-// EXCEL IMPORT HELPERS (optional, unchanged)
+// EXCEL IMPORT HELPERS
 // -----------------------------
 const pickAny = (obj, keys = []) => {
   for (const k of keys) {
@@ -465,7 +476,10 @@ const excelDateToISO = (v) => {
 
 const mapExcelRowToRecord = (row = {}) => {
   const headerMap = {};
-  for (const k of Object.keys(row)) headerMap[normHeader(k)] = row[k];
+  for (const k of Object.keys(row)) {
+    headerMap[normHeader(k)] = row[k];
+  }
+
   const get = (...variants) => pickAny(headerMap, variants.map(normHeader));
 
   const rec = {
@@ -528,7 +542,7 @@ const readExcelRows = (req) => {
 };
 
 // -----------------------------
-// (OPTIONAL) EXCEL IMPORT ENDPOINTS
+// IMPORT
 // -----------------------------
 app.post("/import/records", upload.single("file"), (req, res) => {
   try {
@@ -554,61 +568,95 @@ app.post("/import/records", upload.single("file"), (req, res) => {
 });
 
 // -----------------------------
-// PIN auth
+// PIN AUTH
 // -----------------------------
 const CORRECT_PIN = String(process.env.PIN || "1234").trim();
+
 app.post("/auth/pin", (req, res) => {
   const pin = String(req.body?.pin || "").trim();
+
   if (!pin) return res.status(400).json({ ok: false, message: "Missing PIN" });
   if (pin === CORRECT_PIN) return res.json({ ok: true });
+
   return res.status(401).json({ ok: false, message: "Incorrect PIN" });
 });
 
 // -----------------------------
-// PDF ROUTES (Firestore based)
+// PDF ROUTES
 // -----------------------------
-// FSIC Certificate
 app.get("/records/:id/certificate/:type/pdf", async (req, res) => {
-  const record = await findRecordById(req.params.id);
-  if (!record) return res.status(404).send("Record not found");
+  try {
+    const record = await findRecordById(req.params.id);
+    if (!record) return res.status(404).send("Record not found");
 
-  const type = String(req.params.type || "").toLowerCase();
-  const templateFile = type === "owner" ? "fsic-owner.docx" : "fsic-bfp.docx";
+    const type = String(req.params.type || "").toLowerCase();
 
-  generatePDF(record, templateFile, `fsic-${type}-${record.id}`, res);
+    let templateFile = "";
+    if (type === "owner") {
+      templateFile = "fsic-owner.docx";
+    } else if (type === "bfp") {
+      templateFile = "fsic-bfp.docx";
+    } else if (type === "owner-new") {
+      templateFile = "fsic-owner-new.docx";
+    } else if (type === "bfp-new") {
+      templateFile = "fsic-bfp-new.docx";
+    } else {
+      return res.status(400).send("Invalid certificate type");
+    }
+
+    generatePDF(record, templateFile, `fsic-${type}-${record.id}`, res);
+  } catch (e) {
+    console.error("GET /records/:id/certificate/:type/pdf error:", e);
+    res.status(500).send("Failed to generate certificate PDF.");
+  }
 });
 
-// IO / REINSPECTION / NFSI for records
 app.get("/records/:id/:docType/pdf", async (req, res) => {
-  const record = await findRecordById(req.params.id);
-  if (!record) return res.status(404).send("Record not found");
+  try {
+    const record = await findRecordById(req.params.id);
+    if (!record) return res.status(404).send("Record not found");
 
-  const dt = String(req.params.docType || "").toLowerCase();
-  let templateFile = "";
-  if (dt === "io") templateFile = "officers.docx";
-  else if (dt === "reinspection") templateFile = "reinspection.docx";
-  else if (dt === "nfsi") templateFile = "nfsi-form.docx";
-  else return res.status(400).send("Invalid type");
+    const dt = String(req.params.docType || "").toLowerCase();
 
-  generatePDF(record, templateFile, `${dt}-${record.id}`, res);
+    let templateFile = "";
+    if (dt === "io") templateFile = "officers.docx";
+    else if (dt === "reinspection") templateFile = "reinspection.docx";
+    else if (dt === "nfsi") templateFile = "nfsi-form.docx";
+    else return res.status(400).send("Invalid type");
+
+    generatePDF(record, templateFile, `${dt}-${record.id}`, res);
+  } catch (e) {
+    console.error("GET /records/:id/:docType/pdf error:", e);
+    res.status(500).send("Failed to generate document PDF.");
+  }
 });
 
-// DOCUMENTS PDF generation (Firestore)
 app.get("/documents/:id/:docType/pdf", async (req, res) => {
-  const docu = await findDocumentById(req.params.id);
-  if (!docu) return res.status(404).send("Document not found");
+  try {
+    const docu = await findDocumentById(req.params.id);
+    if (!docu) return res.status(404).send("Document not found");
 
-  const dt = String(req.params.docType || "").toLowerCase();
-  let templateFile = "";
-  if (dt === "io") templateFile = "officers.docx";
-  else if (dt === "reinspection") templateFile = "reinspection.docx";
-  else if (dt === "nfsi") templateFile = "nfsi-form.docx";
-  else return res.status(400).send("Invalid type");
+    const dt = String(req.params.docType || "").toLowerCase();
 
-  generatePDF(docu, templateFile, `doc-${dt}-${docu.id}`, res);
+    let templateFile = "";
+    if (dt === "io") templateFile = "officers.docx";
+    else if (dt === "reinspection") templateFile = "reinspection.docx";
+    else if (dt === "nfsi") templateFile = "nfsi-form.docx";
+    else return res.status(400).send("Invalid type");
+
+    generatePDF(docu, templateFile, `doc-${dt}-${docu.id}`, res);
+  } catch (e) {
+    console.error("GET /documents/:id/:docType/pdf error:", e);
+    res.status(500).send("Failed to generate document PDF.");
+  }
 });
 
-app.get("/", (req, res) => res.send("✅ BFP Backend Running (Firestore Option B)"));
+// -----------------------------
+// ROOT
+// -----------------------------
+app.get("/", (req, res) => {
+  res.send("✅ BFP Backend Running (Firestore Option B)");
+});
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Backend running on port ${PORT}`);
