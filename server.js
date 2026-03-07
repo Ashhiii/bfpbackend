@@ -144,8 +144,8 @@ const toLongDate = (v) => {
 };
 
 const pickAllowedRecordFields = (obj = {}) => ({
-  appno: obj.appno ?? obj.APPLICATION_NO ?? "",
-  fsicAppNo: obj.fsicAppNo ?? obj.FSIC_APP_NO ?? obj.FSIC_NUMBER ?? "",
+  FSIC_NUMBER: record.FSIC_NUMBER || record.fsicNo || "",
+  FSIC_APP_NO: record.FSIC_APP_NO || record.fsicAppNo || "",
   natureOfInspection: obj.natureOfInspection ?? obj.NATURE_OF_INSPECTION ?? "",
   ownerName: obj.ownerName ?? obj.OWNERS_NAME ?? "",
   establishmentName: obj.establishmentName ?? obj.ESTABLISHMENT_NAME ?? "",
@@ -183,7 +183,8 @@ const pickAllowedRecordFields = (obj = {}) => ({
 });
 
 const pickAllowedDocumentFields = (obj = {}) => ({
-  fsicAppNo: obj.fsicAppNo ?? obj.FSIC_APP_NO ?? obj.FSIC_NUMBER ?? "",
+  FSIC_NUMBER: record.FSIC_NUMBER || record.fsicNo || "",
+  FSIC_APP_NO: record.FSIC_APP_NO || record.fsicAppNo || "",
   ownerName: obj.ownerName ?? obj.OWNERS_NAME ?? "",
   establishmentName: obj.establishmentName ?? obj.ESTABLISHMENT_NAME ?? "",
   businessAddress: obj.businessAddress ?? obj.BUSSINESS_ADDRESS ?? obj.ADDRESS ?? "",
