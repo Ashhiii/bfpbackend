@@ -179,6 +179,7 @@ const pickAllowedRecordFields = (obj = {}) => ({
   orDate: obj.orDate ?? obj.OR_DATE ?? "",
 
   chiefName: obj.chiefName ?? obj.CHIEF ?? "",
+  chiefPosition: obj.chiefPosition ?? obj.CHIEF_POSITION ?? "",
   marshalName: obj.marshalName ?? obj.MARSHAL ?? "",
 });
 
@@ -220,6 +221,7 @@ const pickAllowedDocumentFields = (obj = {}) => ({
   inspector5Serial: obj.inspector5Serial ?? obj.INSPECTOR_5_SERIAL ?? "",
 
   chiefName: obj.chiefName ?? obj.CHIEF ?? "",
+  chiefPosition: obj.chiefPosition ?? obj.CHIEF_POSITION ?? "",
   marshalName: obj.marshalName ?? obj.MARSHAL ?? "",
 });
 
@@ -356,6 +358,7 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
 
       DATE: toLongDate(new Date()),
       CHIEF: record.CHIEF || record.chiefName || "",
+      CHIEF_POSITION: record.CHIEF_POSITION ||record.chiefPosition || "",
       MARSHAL: record.MARSHAL || record.marshalName || "",
     };
 
@@ -512,6 +515,7 @@ const mapExcelRowToRecord = (row = {}) => {
     inspectors: String(get("inspectors", "inspector") || ""),
 
     chiefName: String(get("chiefname", "chief") || ""),
+    chiefPosition: String(get("chiefposition", "position") || ""),
     marshalName: String(get("marshalname", "marshal") || ""),
   };
 
