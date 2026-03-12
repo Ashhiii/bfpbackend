@@ -42,10 +42,15 @@ const upload = multer({
 if (!admin.apps.length) {
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+  const privateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(
+    /\\n/g,
+    "\n"
+  );
 
   if (!projectId || !clientEmail || !privateKey) {
-    console.warn("⚠️ Firebase Admin env vars missing. Firestore lookups will fail.");
+    console.warn(
+      "⚠️ Firebase Admin env vars missing. Firestore lookups will fail."
+    );
   } else {
     admin.initializeApp({
       credential: admin.credential.cert({
@@ -66,6 +71,7 @@ const DATA_FILE = path.join(__dirname, "records.json");
 const ARCHIVE_FILE = path.join(__dirname, "archive.json");
 const DOCUMENTS_FILE = path.join(__dirname, "documents.json");
 const HISTORY_FILE = path.join(__dirname, "history.json");
+const CLEARANCES_FILE = path.join(__dirname, "clearances.json");
 
 const ensureFile = (file, defaultData) => {
   if (!fs.existsSync(file)) {
@@ -77,9 +83,11 @@ ensureFile(DATA_FILE, []);
 ensureFile(ARCHIVE_FILE, {});
 ensureFile(DOCUMENTS_FILE, []);
 ensureFile(HISTORY_FILE, []);
+ensureFile(CLEARANCES_FILE, []);
 
 const readJSON = (file) => JSON.parse(fs.readFileSync(file, "utf-8"));
-const writeJSON = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2));
+const writeJSON = (file, data) =>
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
 
 // -----------------------------
 // HELPERS
@@ -90,7 +98,10 @@ const ensureEntityKey = (r) => {
   if (!r) return r;
   if (r.entityKey) return r;
   const fsic = normalize(r.fsicAppNo || r.FSIC_APP_NO || r.FSIC_NUMBER);
-  return { ...r, entityKey: fsic ? `fsic:${fsic}` : `rec:${r.id || Date.now()}` };
+  return {
+    ...r,
+    entityKey: fsic ? `fsic:${fsic}` : `rec:${r.id || Date.now()}`,
+  };
 };
 
 const normalizeEntityKey = (entityKey) => normalize(entityKey);
@@ -144,12 +155,13 @@ const toLongDate = (v) => {
 };
 
 const pickAllowedRecordFields = (obj = {}) => ({
-  FSIC_NUMBER: record.FSIC_NUMBER || record.fsicNo || "",
-  FSIC_APP_NO: record.FSIC_APP_NO || record.fsicAppNo || "",
+  FSIC_NUMBER: obj.FSIC_NUMBER || obj.fsicNo || "",
+  FSIC_APP_NO: obj.FSIC_APP_NO || obj.fsicAppNo || "",
   natureOfInspection: obj.natureOfInspection ?? obj.NATURE_OF_INSPECTION ?? "",
   ownerName: obj.ownerName ?? obj.OWNERS_NAME ?? "",
   establishmentName: obj.establishmentName ?? obj.ESTABLISHMENT_NAME ?? "",
-  businessAddress: obj.businessAddress ?? obj.BUSSINESS_ADDRESS ?? obj.ADDRESS ?? "",
+  businessAddress:
+    obj.businessAddress ?? obj.BUSSINESS_ADDRESS ?? obj.ADDRESS ?? "",
   contactNumber: obj.contactNumber ?? obj.CONTACT_NUMBER ?? "",
   dateInspected: obj.dateInspected ?? obj.DATE_INSPECTED ?? "",
 
@@ -184,11 +196,12 @@ const pickAllowedRecordFields = (obj = {}) => ({
 });
 
 const pickAllowedDocumentFields = (obj = {}) => ({
-  FSIC_NUMBER: record.FSIC_NUMBER || record.fsicNo || "",
-  FSIC_APP_NO: record.FSIC_APP_NO || record.fsicAppNo || "",
+  FSIC_NUMBER: obj.FSIC_NUMBER || obj.fsicNo || "",
+  FSIC_APP_NO: obj.FSIC_APP_NO || obj.fsicAppNo || "",
   ownerName: obj.ownerName ?? obj.OWNERS_NAME ?? "",
   establishmentName: obj.establishmentName ?? obj.ESTABLISHMENT_NAME ?? "",
-  businessAddress: obj.businessAddress ?? obj.BUSSINESS_ADDRESS ?? obj.ADDRESS ?? "",
+  businessAddress:
+    obj.businessAddress ?? obj.BUSSINESS_ADDRESS ?? obj.ADDRESS ?? "",
   contactNumber: obj.contactNumber ?? obj.CONTACT_NUMBER ?? "",
 
   ioNumber: obj.ioNumber ?? obj.IO_NUMBER ?? "",
@@ -225,6 +238,86 @@ const pickAllowedDocumentFields = (obj = {}) => ({
   marshalName: obj.marshalName ?? obj.MARSHAL ?? "",
 });
 
+const makeId = () => {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return String(Date.now() + Math.floor(Math.random() * 100000));
+  }
+};
+
+const pickAllowedClearanceFields = (obj = {}) => ({
+  id: obj.id || makeId(),
+  entityKey: normalizeEntityKey(obj.entityKey || ""),
+  recordId: obj.recordId || "",
+  type: String(obj.type || obj.clearanceType || "").toLowerCase().trim(),
+
+  FSIC_NUMBER: obj.FSIC_NUMBER ?? obj.fsicNumber ?? "",
+  FSIC_APP_NO: obj.FSIC_APP_NO ?? obj.fsicAppNo ?? "",
+
+  ownerName: obj.ownerName ?? obj.OWNERS_NAME ?? "",
+  establishmentName:
+    obj.establishmentName ??
+    obj.ESTABLISHMENT_NAME ??
+    obj.NAME_OF_BUILDING ??
+    "",
+  businessAddress:
+    obj.businessAddress ?? obj.BUSSINESS_ADDRESS ?? obj.ADDRESS ?? "",
+  contactNumber: obj.contactNumber ?? obj.CONTACT_NUMBER ?? "",
+
+  orNumber: obj.orNumber ?? obj.OR_NUMBER ?? "",
+  orAmount: obj.orAmount ?? obj.OR_AMOUNT ?? obj.AMOUNT_PAID ?? "",
+  orDate: obj.orDate ?? obj.OR_DATE ?? "",
+
+  chiefName: obj.chiefName ?? obj.CHIEF ?? obj.CHIEF_FSES ?? "",
+  chiefPosition: obj.chiefPosition ?? obj.CHIEF_POSITION ?? "",
+  marshalName: obj.marshalName ?? obj.MARSHAL ?? obj.FIRE_MARSHAL ?? "",
+
+  amountPaid: obj.amountPaid ?? obj.AMOUNT_PAID ?? obj.OR_AMOUNT ?? "",
+  validUntil: obj.validUntil ?? obj.VALID_UNTIL ?? "",
+
+  // Conveyance
+  plateNumber: obj.plateNumber ?? obj.PLATE_NUMBER ?? "",
+  typeOfVehicle: obj.typeOfVehicle ?? obj.TYPE_OF_VEHICLE ?? "",
+  chassisNumber: obj.chassisNumber ?? obj.CHASSIS_NUMBER ?? "",
+  motorNumber: obj.motorNumber ?? obj.MOTOR_NUMBER ?? "",
+  licenseNumber: obj.licenseNumber ?? obj.LICENSE_NUMBER ?? "",
+  nameOfDriver: obj.nameOfDriver ?? obj.NAME_OF_DRIVER ?? "",
+  trailerNumber: obj.trailerNumber ?? obj.TRAILER_NUMBER ?? "",
+  capacity: obj.capacity ?? obj.CAPACITY ?? "",
+
+  // Storage
+  flammable1: obj.flammable1 ?? obj.FLAMMABLE_1 ?? "",
+  capacity1: obj.capacity1 ?? obj.CAPACITY_1 ?? "",
+  flammable2: obj.flammable2 ?? obj.FLAMMABLE_2 ?? "",
+  capacity2: obj.capacity2 ?? obj.CAPACITY_2 ?? "",
+  flammable3: obj.flammable3 ?? obj.FLAMMABLE_3 ?? "",
+  capacity3: obj.capacity3 ?? obj.CAPACITY_3 ?? "",
+  flammable4: obj.flammable4 ?? obj.FLAMMABLE_4 ?? "",
+  capacity4: obj.capacity4 ?? obj.CAPACITY_4 ?? "",
+
+  // Hot Works
+  companyName: obj.companyName ?? obj.COMPANY_NAME ?? "",
+  jobOrderNumber: obj.jobOrderNumber ?? obj.JOB_ORDER_NUMBER ?? "",
+  natureOfJob: obj.natureOfJob ?? obj.NATURE_OF_JOB ?? "",
+  permitAuthorizingIndividual:
+    obj.permitAuthorizingIndividual ??
+    obj.PERMIT_AUTHORIZING_INDIVIDUAL ??
+    "",
+  hotworkOperator: obj.hotworkOperator ?? obj.HOTWORK_OPERATOR ?? "",
+  fireWatch: obj.fireWatch ?? obj.FIRE_WATCH ?? "",
+
+  // Fire Drill
+  dateConducted: obj.dateConducted ?? obj.DATE_CONDUCTED ?? "",
+
+  // Fumigation
+  operatorName: obj.operatorName ?? obj.OPERATOR_NAME ?? "",
+  operationTime: obj.operationTime ?? obj.OPERATION_TIME ?? "",
+  operationDate: obj.operationDate ?? obj.OPERATION_DATE ?? "",
+
+  createdAt: obj.createdAt || new Date().toISOString(),
+});
+
 // -----------------------------
 // FIRESTORE LOOKUPS
 // -----------------------------
@@ -234,17 +327,26 @@ const findRecordById = async (id) => {
   const snap = await fdb.collection("records").doc(String(id)).get();
   if (snap.exists) return ensureEntityKey({ id: snap.id, ...snap.data() });
 
-  const monthsSnap = await fdb.collection("archive").get();
-  for (const m of monthsSnap.docs) {
-    const recSnap = await fdb
-      .collection("archive")
-      .doc(m.id)
-      .collection("records")
-      .doc(String(id))
-      .get();
+  const archiveCollections = ["archive", "archives"];
 
-    if (recSnap.exists) {
-      return ensureEntityKey({ id: recSnap.id, ...recSnap.data() });
+  for (const colName of archiveCollections) {
+    try {
+      const monthsSnap = await fdb.collection(colName).get();
+
+      for (const m of monthsSnap.docs) {
+        const recSnap = await fdb
+          .collection(colName)
+          .doc(m.id)
+          .collection("records")
+          .doc(String(id))
+          .get();
+
+        if (recSnap.exists) {
+          return ensureEntityKey({ id: recSnap.id, ...recSnap.data() });
+        }
+      }
+    } catch {
+      // skip if collection does not exist
     }
   }
 
@@ -256,6 +358,22 @@ const findDocumentById = async (id) => {
   const snap = await fdb.collection("documents").doc(String(id)).get();
   if (snap.exists) return { id: snap.id, ...snap.data() };
   return null;
+};
+
+const findClearanceById = async (id) => {
+  if (!fdb) return null;
+
+  const snap = await fdb.collection("clearances").doc(String(id)).get();
+  if (!snap.exists) return null;
+
+  return { id: snap.id, ...snap.data() };
+};
+
+const getAllClearances = async () => {
+  if (!fdb) return [];
+
+  const snap = await fdb.collection("clearances").get();
+  return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 };
 
 // -----------------------------
@@ -282,12 +400,16 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
   const templatePath = path.join(__dirname, "templates", templateFile);
 
   if (!fs.existsSync(templatePath)) {
-    return res.status(404).send(`Template not found: ${templateFile} (path=${templatePath})`);
+    return res
+      .status(404)
+      .send(`Template not found: ${templateFile} (path=${templatePath})`);
   }
 
   const soffice = findSoffice();
   if (!soffice) {
-    return res.status(500).send("LibreOffice not found (soffice). Use Docker install libreoffice.");
+    return res
+      .status(500)
+      .send("LibreOffice not found (soffice). Use Docker install libreoffice.");
   }
 
   const stamp = `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
@@ -307,19 +429,31 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
     });
 
     const view = {
-      FSIC_NUMBER: record.FSIC_NUMBER || record.fsicNo || "",
+      // record/document fields
+      FSIC_NUMBER: record.FSIC_NUMBER || record.fsicNo || record.fsicNumber || "",
       FSIC_APP_NO: record.FSIC_APP_NO || record.fsicAppNo || "",
-      DATE_INSPECTED: toLongDate(record.DATE_INSPECTED || record.dateInspected || ""),
+      DATE_INSPECTED: toLongDate(
+        record.DATE_INSPECTED || record.dateInspected || ""
+      ),
+
       NAME_OF_ESTABLISHMENT:
         record.NAME_OF_ESTABLISHMENT ||
         record.ESTABLISHMENT_NAME ||
         record.establishmentName ||
         "",
-      NAME_OF_OWNER: record.NAME_OF_OWNER || record.OWNERS_NAME || record.ownerName || "",
-      ADDRESS: record.ADDRESS || record.BUSSINESS_ADDRESS || record.businessAddress || "",
+
+      NAME_OF_OWNER:
+        record.NAME_OF_OWNER || record.OWNERS_NAME || record.ownerName || "",
+
+      ADDRESS:
+        record.ADDRESS || record.BUSSINESS_ADDRESS || record.businessAddress || "",
+
       FLOOR_AREA: record.FLOOR_AREA || record.floorArea || "",
-      BLDG_DESCRIPTION: record.BLDG_DESCRIPTION || record.BUILDING_DESC || record.buildingDesc || "",
-      FSIC_VALIDITY: toLongDate(record.FSIC_VALIDITY || record.fsicValidity || ""),
+      BLDG_DESCRIPTION:
+        record.BLDG_DESCRIPTION || record.BUILDING_DESC || record.buildingDesc || "",
+      FSIC_VALIDITY: toLongDate(
+        record.FSIC_VALIDITY || record.fsicValidity || ""
+      ),
       OR_NUMBER: record.OR_NUMBER || record.orNumber || "",
       OR_DATE: toLongDate(record.OR_DATE || record.orDate || ""),
       OR_AMOUNT: record.OR_AMOUNT || record.orAmount || "",
@@ -327,39 +461,106 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
       IO_NUMBER: record.IO_NUMBER || record.ioNumber || "",
       IO_DATE: toLongDate(record.IO_DATE || record.ioDate || ""),
       TAXPAYER: record.TAXPAYER || record.OWNERS_NAME || record.ownerName || "",
-      TRADE_NAME: record.TRADE_NAME || record.ESTABLISHMENT_NAME || record.establishmentName || "",
-      CONTACT_: record.CONTACT_ || record.CONTACT_NUMBER || record.contactNumber || "",
+      TRADE_NAME:
+        record.TRADE_NAME ||
+        record.ESTABLISHMENT_NAME ||
+        record.establishmentName ||
+        "",
+      CONTACT_:
+        record.CONTACT_ || record.CONTACT_NUMBER || record.contactNumber || "",
 
       NFSI_NUMBER: record.NFSI_NUMBER || record.nfsiNumber || "",
       NFSI_DATE: toLongDate(record.NFSI_DATE || record.nfsiDate || ""),
 
-      NTC_NUMBER: record.ntcNumber || record.NTC_NUMBER || "",
-      NTC_DATE: toLongDate(record.ntcDate || record.NTC_DATE || ""),
+      NTC_NUMBER: record.NTC_NUMBER || record.ntcNumber || "",
+      NTC_DATE: toLongDate(record.NTC_DATE || record.ntcDate || ""),
 
       OWNER: record.OWNER || record.OWNERS_NAME || record.ownerName || "",
       TEAM_LEADER: record.teamLeader || record.TEAM_LEADER || "",
-      TEAM_LEADER_SERIAL: record.teamLeaderSerial || record.TEAM_LEADER_SERIAL || "",
+      TEAM_LEADER_SERIAL:
+        record.teamLeaderSerial || record.TEAM_LEADER_SERIAL || "",
       INSPECTORS: record.INSPECTORS || record.inspectors || "",
 
       INSPECTOR_1: record.inspector1 || record.INSPECTOR_1 || "",
-      INSPECTOR_1_SERIAL: record.inspector1Serial || record.INSPECTOR_1_SERIAL || "",
+      INSPECTOR_1_SERIAL:
+        record.inspector1Serial || record.INSPECTOR_1_SERIAL || "",
 
       INSPECTOR_2: record.inspector2 || record.INSPECTOR_2 || "",
-      INSPECTOR_2_SERIAL: record.inspector2Serial || record.INSPECTOR_2_SERIAL || "",
+      INSPECTOR_2_SERIAL:
+        record.inspector2Serial || record.INSPECTOR_2_SERIAL || "",
 
       INSPECTOR_3: record.inspector3 || record.INSPECTOR_3 || "",
-      INSPECTOR_3_SERIAL: record.inspector3Serial || record.INSPECTOR_3_SERIAL || "",
+      INSPECTOR_3_SERIAL:
+        record.inspector3Serial || record.INSPECTOR_3_SERIAL || "",
 
       INSPECTOR_4: record.inspector4 || record.INSPECTOR_4 || "",
-      INSPECTOR_4_SERIAL: record.inspector4Serial || record.INSPECTOR_4_SERIAL || "",
+      INSPECTOR_4_SERIAL:
+        record.inspector4Serial || record.INSPECTOR_4_SERIAL || "",
 
       INSPECTOR_5: record.inspector5 || record.INSPECTOR_5 || "",
-      INSPECTOR_5_SERIAL: record.inspector5Serial || record.INSPECTOR_5_SERIAL || "",
+      INSPECTOR_5_SERIAL:
+        record.inspector5Serial || record.INSPECTOR_5_SERIAL || "",
 
       DATE: toLongDate(new Date()),
       CHIEF: record.CHIEF || record.chiefName || "",
-      CHIEF_POSITION: record.CHIEF_POSITION ||record.chiefPosition || "",
+      CHIEF_POSITION: record.CHIEF_POSITION || record.chiefPosition || "",
       MARSHAL: record.MARSHAL || record.marshalName || "",
+
+      // clearance fields
+      NAME_OF_BUILDING:
+        record.NAME_OF_BUILDING ||
+        record.establishmentName ||
+        record.ESTABLISHMENT_NAME ||
+        "",
+
+      AMOUNT_PAID:
+        record.AMOUNT_PAID ||
+        record.amountPaid ||
+        record.OR_AMOUNT ||
+        record.orAmount ||
+        "",
+
+      CHIEF_FSES: record.CHIEF_FSES || record.chiefName || "",
+      FIRE_MARSHAL: record.FIRE_MARSHAL || record.marshalName || "",
+
+      PLATE_NUMBER: record.PLATE_NUMBER || record.plateNumber || "",
+      TYPE_OF_VEHICLE: record.TYPE_OF_VEHICLE || record.typeOfVehicle || "",
+      CHASSIS_NUMBER: record.CHASSIS_NUMBER || record.chassisNumber || "",
+      MOTOR_NUMBER: record.MOTOR_NUMBER || record.motorNumber || "",
+      LICENSE_NUMBER: record.LICENSE_NUMBER || record.licenseNumber || "",
+      NAME_OF_DRIVER: record.NAME_OF_DRIVER || record.nameOfDriver || "",
+      TRAILER_NUMBER: record.TRAILER_NUMBER || record.trailerNumber || "",
+      CAPACITY: record.CAPACITY || record.capacity || "",
+
+      FLAMMABLE_1: record.FLAMMABLE_1 || record.flammable1 || "",
+      CAPACITY_1: record.CAPACITY_1 || record.capacity1 || "",
+      FLAMMABLE_2: record.FLAMMABLE_2 || record.flammable2 || "",
+      CAPACITY_2: record.CAPACITY_2 || record.capacity2 || "",
+      FLAMMABLE_3: record.FLAMMABLE_3 || record.flammable3 || "",
+      CAPACITY_3: record.CAPACITY_3 || record.capacity3 || "",
+      FLAMMABLE_4: record.FLAMMABLE_4 || record.flammable4 || "",
+      CAPACITY_4: record.CAPACITY_4 || record.capacity4 || "",
+
+      COMPANY_NAME: record.COMPANY_NAME || record.companyName || "",
+      JOB_ORDER_NUMBER: record.JOB_ORDER_NUMBER || record.jobOrderNumber || "",
+      NATURE_OF_JOB: record.NATURE_OF_JOB || record.natureOfJob || "",
+      PERMIT_AUTHORIZING_INDIVIDUAL:
+        record.PERMIT_AUTHORIZING_INDIVIDUAL ||
+        record.permitAuthorizingIndividual ||
+        "",
+      HOTWORK_OPERATOR: record.HOTWORK_OPERATOR || record.hotworkOperator || "",
+      FIRE_WATCH: record.FIRE_WATCH || record.fireWatch || "",
+
+      DATE_CONDUCTED: toLongDate(
+        record.DATE_CONDUCTED || record.dateConducted || ""
+      ),
+
+      OPERATOR_NAME: record.OPERATOR_NAME || record.operatorName || "",
+      OPERATION_TIME: record.OPERATION_TIME || record.operationTime || "",
+      OPERATION_DATE: toLongDate(
+        record.OPERATION_DATE || record.operationDate || ""
+      ),
+      VALID_UNTIL: toLongDate(record.VALID_UNTIL || record.validUntil || ""),
     };
 
     doc.render(view);
@@ -379,7 +580,9 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
         } catch {}
         return res
           .status(500)
-          .send(`PDF conversion failed. ${String(stderr || err?.message || err)}`);
+          .send(
+            `PDF conversion failed. ${String(stderr || err?.message || err)}`
+          );
       }
 
       const expectedPdf = outputDocx.replace(/\.docx$/i, ".pdf");
@@ -391,7 +594,10 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
       }
 
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="${filenameBase}.pdf"`);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${filenameBase}.pdf"`
+      );
 
       res.download(expectedPdf, () => {
         try {
@@ -407,7 +613,9 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
     try {
       if (fs.existsSync(outputDocx)) fs.unlinkSync(outputDocx);
     } catch {}
-    return res.status(500).send(`PDF generation failed (templater). ${e.message}`);
+    return res
+      .status(500)
+      .send(`PDF generation failed (templater). ${e.message}`);
   }
 };
 
@@ -456,14 +664,6 @@ const normHeader = (s) =>
     .replace(/_/g, "")
     .replace(/-/g, "");
 
-const makeId = () => {
-  try {
-    return crypto.randomUUID();
-  } catch {
-    return String(Date.now() + Math.floor(Math.random() * 100000));
-  }
-};
-
 const excelDateToISO = (v) => {
   if (typeof v === "string") return v;
   if (typeof v === "number") {
@@ -490,14 +690,23 @@ const mapExcelRowToRecord = (row = {}) => {
     id: makeId(),
     createdAt: new Date().toISOString(),
 
-    appno: String(get("appno", "applicationno", "application#", "applicationnumber") || ""),
-    fsicAppNo: String(get("fsicappno", "fsicno", "fsicnumber", "fsicapp#", "fsicapp") || ""),
-    natureOfInspection: String(get("natureofinspection", "inspection", "nature") || ""),
+    appno: String(
+      get("appno", "applicationno", "application#", "applicationnumber") || ""
+    ),
+    fsicAppNo: String(
+      get("fsicappno", "fsicno", "fsicnumber", "fsicapp#", "fsicapp") || ""
+    ),
+    natureOfInspection: String(
+      get("natureofinspection", "inspection", "nature") || ""
+    ),
     ownerName: String(get("owner", "ownername", "ownersname", "taxpayer") || ""),
     establishmentName: String(
-      get("establishment", "establishmentname", "tradename", "nameofestablishment") || ""
+      get("establishment", "establishmentname", "tradename", "nameofestablishment") ||
+        ""
     ),
-    businessAddress: String(get("businessaddress", "address", "bussinessaddress") || ""),
+    businessAddress: String(
+      get("businessaddress", "address", "bussinessaddress") || ""
+    ),
     contactNumber: String(get("contactnumber", "contact", "mobile") || ""),
     dateInspected: excelDateToISO(get("dateinspected", "date") || ""),
 
@@ -556,7 +765,9 @@ app.post("/import/records", upload.single("file"), (req, res) => {
 
     const current = (readJSON(DATA_FILE) || []).map(ensureEntityKey);
     const mapped = rows.map(mapExcelRowToRecord);
-    const toAdd = mapped.filter((r) => normalize(r.fsicAppNo) && normalize(r.ownerName));
+    const toAdd = mapped.filter(
+      (r) => normalize(r.fsicAppNo) && normalize(r.ownerName)
+    );
 
     writeJSON(DATA_FILE, [...current, ...toAdd]);
 
@@ -568,7 +779,9 @@ app.post("/import/records", upload.single("file"), (req, res) => {
     });
   } catch (e) {
     console.error("POST /import/records error:", e);
-    res.status(500).json({ success: false, message: "Failed to import records Excel." });
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to import records Excel." });
   }
 });
 
@@ -584,6 +797,305 @@ app.post("/auth/pin", (req, res) => {
   if (pin === CORRECT_PIN) return res.json({ ok: true });
 
   return res.status(401).json({ ok: false, message: "Incorrect PIN" });
+});
+
+// -----------------------------
+// CLEARANCES ROUTES
+// -----------------------------
+app.post("/clearances", async (req, res) => {
+  try {
+    if (!fdb) {
+      return res.status(500).json({
+        success: false,
+        message: "Firestore is not initialized.",
+      });
+    }
+
+    let payload = pickAllowedClearanceFields(req.body);
+
+    if (!payload.type) {
+      return res.status(400).json({
+        success: false,
+        message: "Clearance type is required.",
+      });
+    }
+
+    if (payload.recordId && !payload.entityKey) {
+      const record = await findRecordById(payload.recordId);
+
+      if (record?.entityKey) {
+        payload.entityKey = record.entityKey;
+      }
+
+      if (!payload.FSIC_APP_NO && record?.FSIC_APP_NO) {
+        payload.FSIC_APP_NO = record.FSIC_APP_NO;
+      }
+
+      if (!payload.FSIC_NUMBER && record?.FSIC_NUMBER) {
+        payload.FSIC_NUMBER = record.FSIC_NUMBER;
+      }
+
+      if (!payload.ownerName && (record?.ownerName || record?.OWNERS_NAME)) {
+        payload.ownerName = record.ownerName || record.OWNERS_NAME || "";
+      }
+
+      if (
+        !payload.establishmentName &&
+        (record?.establishmentName || record?.ESTABLISHMENT_NAME)
+      ) {
+        payload.establishmentName =
+          record.establishmentName || record.ESTABLISHMENT_NAME || "";
+      }
+
+      if (
+        !payload.businessAddress &&
+        (record?.businessAddress || record?.BUSSINESS_ADDRESS || record?.ADDRESS)
+      ) {
+        payload.businessAddress =
+          record.businessAddress ||
+          record.BUSSINESS_ADDRESS ||
+          record.ADDRESS ||
+          "";
+      }
+
+      if (
+        !payload.contactNumber &&
+        (record?.contactNumber || record?.CONTACT_NUMBER)
+      ) {
+        payload.contactNumber = record.contactNumber || record.CONTACT_NUMBER || "";
+      }
+    }
+
+    await fdb.collection("clearances").doc(String(payload.id)).set(payload);
+
+    res.json({ success: true, data: payload });
+  } catch (e) {
+    console.error("POST /clearances error:", e);
+    res.status(500).json({
+      success: false,
+      message: "Failed to save clearance.",
+    });
+  }
+});
+
+app.get("/clearances", async (req, res) => {
+  try {
+    if (!fdb) {
+      return res.status(500).json({
+        success: false,
+        message: "Firestore is not initialized.",
+      });
+    }
+
+    const snap = await fdb.collection("clearances").orderBy("createdAt", "desc").get();
+    const items = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+
+    res.json(items);
+  } catch (e) {
+    console.error("GET /clearances error:", e);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch clearances.",
+    });
+  }
+});
+
+app.get("/clearances/:id", async (req, res) => {
+  try {
+    const item = await findClearanceById(req.params.id);
+
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        message: "Clearance not found.",
+      });
+    }
+
+    res.json(item);
+  } catch (e) {
+    console.error("GET /clearances/:id error:", e);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch clearance.",
+    });
+  }
+});
+
+app.put("/clearances/:id", async (req, res) => {
+  try {
+    if (!fdb) {
+      return res.status(500).json({
+        success: false,
+        message: "Firestore is not initialized.",
+      });
+    }
+
+    const existing = await findClearanceById(req.params.id);
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: "Clearance not found.",
+      });
+    }
+
+    const merged = {
+      ...existing,
+      ...pickAllowedClearanceFields({
+        ...existing,
+        ...req.body,
+        id: existing.id,
+        createdAt: existing.createdAt,
+      }),
+    };
+
+    await fdb.collection("clearances").doc(String(existing.id)).set(merged);
+
+    res.json({ success: true, data: merged });
+  } catch (e) {
+    console.error("PUT /clearances/:id error:", e);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update clearance.",
+    });
+  }
+});
+
+app.delete("/clearances/:id", async (req, res) => {
+  try {
+    if (!fdb) {
+      return res.status(500).json({
+        success: false,
+        message: "Firestore is not initialized.",
+      });
+    }
+
+    const existing = await findClearanceById(req.params.id);
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: "Clearance not found.",
+      });
+    }
+
+    await fdb.collection("clearances").doc(String(req.params.id)).delete();
+
+    res.json({ success: true });
+  } catch (e) {
+    console.error("DELETE /clearances/:id error:", e);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete clearance.",
+    });
+  }
+});
+
+app.get("/records/:id/clearances", async (req, res) => {
+  try {
+    if (!fdb) {
+      return res.status(500).json({
+        success: false,
+        message: "Firestore is not initialized.",
+      });
+    }
+
+    const record = await findRecordById(req.params.id);
+    if (!record) {
+      return res.status(404).json({
+        success: false,
+        message: "Record not found",
+      });
+    }
+
+    const entityKey = normalize(record.entityKey);
+
+    const snap = await fdb.collection("clearances").get();
+    const items = snap.docs
+      .map((doc) => ({ id: doc.id, ...doc.data() }))
+      .filter(
+        (c) =>
+          normalize(c.entityKey) === entityKey ||
+          String(c.recordId) === String(record.id)
+      );
+
+    res.json(items);
+  } catch (e) {
+    console.error("GET /records/:id/clearances error:", e);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch record clearances.",
+    });
+  }
+});
+
+app.get("/clearances/:id/certificate/:type/pdf", async (req, res) => {
+  try {
+    console.log("PDF REQUEST ID:", req.params.id);
+    console.log("PDF REQUEST TYPE:", req.params.type);
+
+    const clearance = await findClearanceById(req.params.id);
+    if (!clearance) {
+      console.log("Clearance not found in Firestore");
+      return res.status(404).send("Clearance not found");
+    }
+
+    const type = String(req.params.type || "").toLowerCase().trim();
+
+    let templateFile = "";
+    if (type === "conveyance") templateFile = "FSED-38F-Conveyance.docx";
+    else if (type === "storage") templateFile = "FSED-37F-Storage.docx";
+    else if (type === "hotworks") templateFile = "FSED-34F-Hot-Works.docx";
+    else if (type === "firedrill") templateFile = "FSED-44F-Fire-Drill-Rev02.docx";
+    else if (type === "fumigation") templateFile = "FSED-41F-Fumigation.docx";
+    else return res.status(400).send("Invalid clearance certificate type");
+
+    console.log("USING TEMPLATE:", templateFile);
+
+    generatePDF(
+      clearance,
+      templateFile,
+      `clearance-${type}-${clearance.id}`,
+      res
+    );
+  } catch (e) {
+    console.error("GET /clearances/:id/certificate/:type/pdf error:", e);
+    res.status(500).send("Failed to generate clearance PDF.");
+  }
+});
+
+app.get("/clearances/:id/pdf", async (req, res) => {
+  try {
+    const clearance = await findClearanceById(req.params.id);
+    if (!clearance) return res.status(404).send("Clearance not found");
+
+    const type = String(clearance.type || "").toLowerCase().trim();
+
+    let templateFile = "";
+    if (type === "conveyance") {
+      templateFile = "FSED-38F-Conveyance.docx";
+    } else if (type === "storage") {
+      templateFile = "FSED-37F-Storage.docx";
+    } else if (type === "hotworks") {
+      templateFile = "FSED-34F-Hot-Works.docx";
+    } else if (type === "firedrill") {
+      templateFile = "FSED-44F-Fire-Drill-Rev02.docx";
+    } else if (type === "fumigation") {
+      templateFile = "FSED-41F-Fumigation.docx";
+    } else {
+      return res.status(400).send("Invalid clearance type");
+    }
+
+    generatePDF(
+      clearance,
+      templateFile,
+      `clearance-${type}-${clearance.id}`,
+      res
+    );
+  } catch (e) {
+    console.error("GET /clearances/:id/pdf error:", e);
+    res.status(500).send("Failed to generate clearance PDF.");
+  }
 });
 
 // -----------------------------
