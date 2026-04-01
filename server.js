@@ -250,7 +250,9 @@ const pickAllowedClearanceFields = (obj = {}) => ({
   id: obj.id || makeId(),
   entityKey: normalizeEntityKey(obj.entityKey || ""),
   recordId: obj.recordId || "",
-  type: String(obj.type || obj.clearanceType || "").toLowerCase().trim(),
+  type: String(
+    obj.type || obj.clearanceType || obj.templateType || ""
+  ).toLowerCase().trim(),
 
   FSIC_NUMBER: obj.FSIC_NUMBER ?? obj.fsicNumber ?? "",
   FSIC_APP_NO: obj.FSIC_APP_NO ?? obj.fsicAppNo ?? "",
@@ -265,6 +267,14 @@ const pickAllowedClearanceFields = (obj = {}) => ({
     obj.businessAddress ?? obj.BUSSINESS_ADDRESS ?? obj.ADDRESS ?? "",
   contactNumber: obj.contactNumber ?? obj.CONTACT_NUMBER ?? "",
 
+  // NEW COMMON CLEARANCE FIELDS
+  controlNumber: obj.controlNumber ?? obj.CONTROL_NUMBER ?? "",
+  clearanceDate: obj.clearanceDate ?? obj.CLEARANCE_DATE ?? "",
+  clearanceValidity:
+    obj.clearanceValidity ?? obj.CLEARANCE_VALIDITY ?? obj.validUntil ?? obj.VALID_UNTIL ?? "",
+  validUntil:
+    obj.validUntil ?? obj.VALID_UNTIL ?? obj.clearanceValidity ?? obj.CLEARANCE_VALIDITY ?? "",
+
   orNumber: obj.orNumber ?? obj.OR_NUMBER ?? "",
   orAmount: obj.orAmount ?? obj.OR_AMOUNT ?? obj.AMOUNT_PAID ?? "",
   orDate: obj.orDate ?? obj.OR_DATE ?? "",
@@ -274,19 +284,25 @@ const pickAllowedClearanceFields = (obj = {}) => ({
   marshalName: obj.marshalName ?? obj.MARSHAL ?? obj.FIRE_MARSHAL ?? "",
 
   amountPaid: obj.amountPaid ?? obj.AMOUNT_PAID ?? obj.OR_AMOUNT ?? "",
-  validUntil: obj.validUntil ?? obj.VALID_UNTIL ?? "",
 
   // Conveyance
   plateNumber: obj.plateNumber ?? obj.PLATE_NUMBER ?? "",
-  typeOfVehicle: obj.typeOfVehicle ?? obj.TYPE_OF_VEHICLE ?? "",
+  typeOfVehicle:
+    obj.typeOfVehicle ?? obj.vehicleType ?? obj.TYPE_OF_VEHICLE ?? "",
+  vehicleType:
+    obj.vehicleType ?? obj.typeOfVehicle ?? obj.TYPE_OF_VEHICLE ?? "",
   chassisNumber: obj.chassisNumber ?? obj.CHASSIS_NUMBER ?? "",
   motorNumber: obj.motorNumber ?? obj.MOTOR_NUMBER ?? "",
   licenseNumber: obj.licenseNumber ?? obj.LICENSE_NUMBER ?? "",
-  nameOfDriver: obj.nameOfDriver ?? obj.NAME_OF_DRIVER ?? "",
+  nameOfDriver:
+    obj.nameOfDriver ?? obj.driverName ?? obj.NAME_OF_DRIVER ?? "",
+  driverName:
+    obj.driverName ?? obj.nameOfDriver ?? obj.NAME_OF_DRIVER ?? "",
   trailerNumber: obj.trailerNumber ?? obj.TRAILER_NUMBER ?? "",
   capacity: obj.capacity ?? obj.CAPACITY ?? "",
 
   // Storage
+  storageAddress: obj.storageAddress ?? obj.STORAGE_ADDRESS ?? "",
   flammable1: obj.flammable1 ?? obj.FLAMMABLE_1 ?? "",
   capacity1: obj.capacity1 ?? obj.CAPACITY_1 ?? "",
   flammable2: obj.flammable2 ?? obj.FLAMMABLE_2 ?? "",
@@ -304,16 +320,26 @@ const pickAllowedClearanceFields = (obj = {}) => ({
     obj.permitAuthorizingIndividual ??
     obj.PERMIT_AUTHORIZING_INDIVIDUAL ??
     "",
-  hotworkOperator: obj.hotworkOperator ?? obj.HOTWORK_OPERATOR ?? "",
-  fireWatch: obj.fireWatch ?? obj.FIRE_WATCH ?? "",
+  hotworkOperator:
+    obj.hotworkOperator ?? obj.hotWorkOperator ?? obj.HOTWORK_OPERATOR ?? "",
+  hotWorkOperator:
+    obj.hotWorkOperator ?? obj.hotworkOperator ?? obj.HOTWORK_OPERATOR ?? "",
+  fireWatch: obj.fireWatch ?? obj.fireWatchName ?? obj.FIRE_WATCH ?? "",
+  fireWatchName: obj.fireWatchName ?? obj.fireWatch ?? obj.FIRE_WATCH ?? "",
 
   // Fire Drill
-  dateConducted: obj.dateConducted ?? obj.DATE_CONDUCTED ?? "",
+  dateConducted:
+    obj.dateConducted ?? obj.fireDrillDate ?? obj.DATE_CONDUCTED ?? "",
+  fireDrillDate:
+    obj.fireDrillDate ?? obj.dateConducted ?? obj.DATE_CONDUCTED ?? "",
+  issuedDay: obj.issuedDay ?? obj.ISSUED_DAY ?? "",
+  issuedMonth: obj.issuedMonth ?? obj.ISSUED_MONTH ?? "",
 
   // Fumigation
   operatorName: obj.operatorName ?? obj.OPERATOR_NAME ?? "",
   operationTime: obj.operationTime ?? obj.OPERATION_TIME ?? "",
   operationDate: obj.operationDate ?? obj.OPERATION_DATE ?? "",
+  operationDuration: obj.operationDuration ?? obj.OPERATION_DURATION ?? "",
 
   createdAt: obj.createdAt || new Date().toISOString(),
 });
@@ -561,6 +587,17 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
         record.OPERATION_DATE || record.operationDate || ""
       ),
       VALID_UNTIL: toLongDate(record.VALID_UNTIL || record.validUntil || ""),
+      CONTROL_NUMBER: record.CONTROL_NUMBER || record.controlNumber || "",
+      CLEARANCE_DATE: toLongDate(
+        record.CLEARANCE_DATE || record.clearanceDate || ""
+      ),
+      CLEARANCE_VALIDITY: toLongDate(
+        record.CLEARANCE_VALIDITY || record.clearanceValidity || record.VALID_UNTIL || record.validUntil || ""
+      ),
+      ISSUED_DAY: record.ISSUED_DAY || record.issuedDay || "",
+      ISSUED_MONTH: record.ISSUED_MONTH || record.issuedMonth || "",
+      STORAGE_ADDRESS: record.STORAGE_ADDRESS || record.storageAddress || "",
+      OPERATION_DURATION: record.OPERATION_DURATION || record.operationDuration || "",
     };
 
     doc.render(view);
