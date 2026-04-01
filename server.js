@@ -336,10 +336,13 @@ const pickAllowedClearanceFields = (obj = {}) => ({
   issuedMonth: obj.issuedMonth ?? obj.ISSUED_MONTH ?? "",
 
   // Fumigation
-  operatorName: obj.operatorName ?? obj.OPERATOR_NAME ?? "",
-  operationTime: obj.operationTime ?? obj.OPERATION_TIME ?? "",
-  operationDate: obj.operationDate ?? obj.OPERATION_DATE ?? "",
-  operationDuration: obj.operationDuration ?? obj.OPERATION_DURATION ?? "",
+// Fumigation
+operatorName: obj.operatorName ?? obj.OPERATOR_NAME ?? "",
+operationTime: obj.operationTime ?? obj.OPERATION_TIME ?? "",
+operationDate: obj.operationDate ?? obj.OPERATION_DATE ?? "",
+operationDuration: obj.operationDuration ?? obj.OPERATION_DURATION ?? "",
+foggingAddress: obj.foggingAddress ?? obj.FOGGING_ADDRESS ?? "",
+conductedBy: obj.conductedBy ?? obj.CONDUCTED_BY ?? "",
 
   createdAt: obj.createdAt || new Date().toISOString(),
 });
@@ -598,6 +601,10 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
       ISSUED_MONTH: record.ISSUED_MONTH || record.issuedMonth || "",
       STORAGE_ADDRESS: record.STORAGE_ADDRESS || record.storageAddress || "",
       OPERATION_DURATION: record.OPERATION_DURATION || record.operationDuration || "",
+      FOGGING_ADDRESS:
+  record.FOGGING_ADDRESS || record.foggingAddress || record.fogging_address || "",
+CONDUCTED_BY:
+  record.CONDUCTED_BY || record.conductedBy || record.conducted_by || "",
     };
 
     doc.render(view);
