@@ -474,7 +474,7 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
 
     const view = {
       // record/document fields
-      FSIC_NUMBER: record.FSIC_NUMBER || record.fsicNo || record.fsicNumber || "",
+      FSIC_NUMBER: record.fsicNo || record.FSIC_NUMBER || record.fsicNumber || "",
       FSIC_APP_NO: record.FSIC_APP_NO || record.fsicAppNo || "",
       DATE_INSPECTED: toLongDate(
         record.DATE_INSPECTED || record.dateInspected || ""
