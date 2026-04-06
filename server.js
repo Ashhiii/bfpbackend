@@ -169,89 +169,118 @@ const formatIssuedDay = (day) => {
 };
 
 
-const pickAllowedRecordFields = (obj = {}) => ({
-  FSIC_NUMBER: obj.FSIC_NUMBER || obj.fsicNo || "",
-  FSIC_APP_NO: obj.FSIC_APP_NO || obj.fsicAppNo || "",
-  natureOfInspection: obj.natureOfInspection ?? obj.NATURE_OF_INSPECTION ?? "",
-  ownerName: obj.ownerName ?? obj.OWNERS_NAME ?? "",
-  establishmentName: obj.establishmentName ?? obj.ESTABLISHMENT_NAME ?? "",
-  businessAddress:
-    obj.businessAddress ?? obj.BUSSINESS_ADDRESS ?? obj.ADDRESS ?? "",
-  contactNumber: obj.contactNumber ?? obj.CONTACT_NUMBER ?? "",
-  dateInspected: obj.dateInspected ?? obj.DATE_INSPECTED ?? "",
+const pickAllowedRecordFields = (obj = {}) => {
+  const syncedFsicNo = String(
+    obj.fsicNo ?? obj.FSIC_NUMBER ?? obj.fsicNumber ?? ""
+  ).trim();
 
-  ioNumber: obj.ioNumber ?? obj.IO_NUMBER ?? "",
-  ioDate: obj.ioDate ?? obj.IO_DATE ?? "",
+  const syncedFsicAppNo = String(
+    obj.fsicAppNo ?? obj.FSIC_APP_NO ?? ""
+  ).trim();
 
-  nfsiNumber: obj.nfsiNumber ?? obj.NFSI_NUMBER ?? "",
-  nfsiDate: obj.nfsiDate ?? obj.NFSI_DATE ?? "",
+  return {
+    fsicNo: syncedFsicNo,
+    FSIC_NUMBER: syncedFsicNo,
 
-  ntcNumber: obj.ntcNumber ?? obj.NTC_NUMBER ?? "",
-  ntcDate: obj.ntcDate ?? obj.NTC_DATE ?? "",
+    fsicAppNo: syncedFsicAppNo,
+    FSIC_APP_NO: syncedFsicAppNo,
 
-  fsicValidity: obj.fsicValidity ?? obj.FSIC_VALIDITY ?? "",
-  defects: obj.defects ?? obj.DEFECTS ?? "",
-  inspectors: obj.inspectors ?? obj.INSPECTORS ?? "",
-  occupancyType: obj.occupancyType ?? obj.OCCUPANCY_TYPE ?? "",
-  buildingDesc: obj.buildingDesc ?? obj.BUILDING_DESC ?? obj.BLDG_DESCRIPTION ?? "",
-  floorArea: obj.floorArea ?? obj.FLOOR_AREA ?? "",
-  buildingHeight: obj.buildingHeight ?? obj.BUILDING_HEIGHT ?? "",
-  storeyCount: obj.storeyCount ?? obj.STOREY_COUNT ?? "",
-  highRise: obj.highRise ?? obj.HIGH_RISE ?? "",
-  fsmr: obj.fsmr ?? obj.FSMR ?? "",
-  remarks: obj.remarks ?? obj.REMARKS ?? "",
+    natureOfInspection: obj.natureOfInspection ?? obj.NATURE_OF_INSPECTION ?? "",
+    ownerName: obj.ownerName ?? obj.OWNERS_NAME ?? "",
+    establishmentName: obj.establishmentName ?? obj.ESTABLISHMENT_NAME ?? "",
+    businessAddress:
+      obj.businessAddress ?? obj.BUSSINESS_ADDRESS ?? obj.ADDRESS ?? "",
+    contactNumber: obj.contactNumber ?? obj.CONTACT_NUMBER ?? "",
+    dateInspected: obj.dateInspected ?? obj.DATE_INSPECTED ?? "",
 
-  orNumber: obj.orNumber ?? obj.OR_NUMBER ?? "",
-  orAmount: obj.orAmount ?? obj.OR_AMOUNT ?? "",
-  orDate: obj.orDate ?? obj.OR_DATE ?? "",
+    ioNumber: obj.ioNumber ?? obj.IO_NUMBER ?? "",
+    ioDate: obj.ioDate ?? obj.IO_DATE ?? "",
 
-  chiefName: obj.chiefName ?? obj.CHIEF ?? "",
-  chiefPosition: obj.chiefPosition ?? obj.CHIEF_POSITION ?? "",
-  marshalName: obj.marshalName ?? obj.MARSHAL ?? "",
-});
+    nfsiNumber: obj.nfsiNumber ?? obj.NFSI_NUMBER ?? "",
+    nfsiDate: obj.nfsiDate ?? obj.NFSI_DATE ?? "",
 
-const pickAllowedDocumentFields = (obj = {}) => ({
-  FSIC_NUMBER: obj.FSIC_NUMBER || obj.fsicNo || "",
-  FSIC_APP_NO: obj.FSIC_APP_NO || obj.fsicAppNo || "",
-  ownerName: obj.ownerName ?? obj.OWNERS_NAME ?? "",
-  establishmentName: obj.establishmentName ?? obj.ESTABLISHMENT_NAME ?? "",
-  businessAddress:
-    obj.businessAddress ?? obj.BUSSINESS_ADDRESS ?? obj.ADDRESS ?? "",
-  contactNumber: obj.contactNumber ?? obj.CONTACT_NUMBER ?? "",
+    ntcNumber: obj.ntcNumber ?? obj.NTC_NUMBER ?? "",
+    ntcDate: obj.ntcDate ?? obj.NTC_DATE ?? "",
 
-  ioNumber: obj.ioNumber ?? obj.IO_NUMBER ?? "",
-  ioDate: obj.ioDate ?? obj.IO_DATE ?? "",
+    fsicValidity: obj.fsicValidity ?? obj.FSIC_VALIDITY ?? "",
+    defects: obj.defects ?? obj.DEFECTS ?? "",
+    inspectors: obj.inspectors ?? obj.INSPECTORS ?? "",
+    occupancyType: obj.occupancyType ?? obj.OCCUPANCY_TYPE ?? "",
+    buildingDesc:
+      obj.buildingDesc ?? obj.BUILDING_DESC ?? obj.BLDG_DESCRIPTION ?? "",
+    floorArea: obj.floorArea ?? obj.FLOOR_AREA ?? "",
+    buildingHeight: obj.buildingHeight ?? obj.BUILDING_HEIGHT ?? "",
+    storeyCount: obj.storeyCount ?? obj.STOREY_COUNT ?? "",
+    highRise: obj.highRise ?? obj.HIGH_RISE ?? "",
+    fsmr: obj.fsmr ?? obj.FSMR ?? "",
+    remarks: obj.remarks ?? obj.REMARKS ?? "",
 
-  ntcNumber: obj.ntcNumber ?? obj.NTC_NUMBER ?? "",
-  ntcDate: obj.ntcDate ?? obj.NTC_DATE ?? "",
+    orNumber: obj.orNumber ?? obj.OR_NUMBER ?? "",
+    orAmount: obj.orAmount ?? obj.OR_AMOUNT ?? "",
+    orDate: obj.orDate ?? obj.OR_DATE ?? "",
 
-  nfsiNumber: obj.nfsiNumber ?? obj.NFSI_NUMBER ?? "",
-  nfsiDate: obj.nfsiDate ?? obj.NFSI_DATE ?? "",
+    chiefName: obj.chiefName ?? obj.CHIEF ?? "",
+    chiefPosition: obj.chiefPosition ?? obj.CHIEF_POSITION ?? "",
+    marshalName: obj.marshalName ?? obj.MARSHAL ?? "",
+  };
+};
 
-  inspectors: obj.inspectors ?? obj.INSPECTORS ?? "",
+const pickAllowedDocumentFields = (obj = {}) => {
+  const syncedFsicNo = String(
+    obj.fsicNo ?? obj.FSIC_NUMBER ?? obj.fsicNumber ?? ""
+  ).trim();
 
-  teamLeader: obj.teamLeader ?? obj.TEAM_LEADER ?? "",
-  teamLeaderSerial: obj.teamLeaderSerial ?? obj.TEAM_LEADER_SERIAL ?? "",
+  const syncedFsicAppNo = String(
+    obj.fsicAppNo ?? obj.FSIC_APP_NO ?? ""
+  ).trim();
 
-  inspector1: obj.inspector1 ?? obj.INSPECTOR_1 ?? "",
-  inspector1Serial: obj.inspector1Serial ?? obj.INSPECTOR_1_SERIAL ?? "",
+  return {
+    fsicNo: syncedFsicNo,
+    FSIC_NUMBER: syncedFsicNo,
 
-  inspector2: obj.inspector2 ?? obj.INSPECTOR_2 ?? "",
-  inspector2Serial: obj.inspector2Serial ?? obj.INSPECTOR_2_SERIAL ?? "",
+    fsicAppNo: syncedFsicAppNo,
+    FSIC_APP_NO: syncedFsicAppNo,
 
-  inspector3: obj.inspector3 ?? obj.INSPECTOR_3 ?? "",
-  inspector3Serial: obj.inspector3Serial ?? obj.INSPECTOR_3_SERIAL ?? "",
+    ownerName: obj.ownerName ?? obj.OWNERS_NAME ?? "",
+    establishmentName: obj.establishmentName ?? obj.ESTABLISHMENT_NAME ?? "",
+    businessAddress:
+      obj.businessAddress ?? obj.BUSSINESS_ADDRESS ?? obj.ADDRESS ?? "",
+    contactNumber: obj.contactNumber ?? obj.CONTACT_NUMBER ?? "",
 
-  inspector4: obj.inspector4 ?? obj.INSPECTOR_4 ?? "",
-  inspector4Serial: obj.inspector4Serial ?? obj.INSPECTOR_4_SERIAL ?? "",
+    ioNumber: obj.ioNumber ?? obj.IO_NUMBER ?? "",
+    ioDate: obj.ioDate ?? obj.IO_DATE ?? "",
 
-  inspector5: obj.inspector5 ?? obj.INSPECTOR_5 ?? "",
-  inspector5Serial: obj.inspector5Serial ?? obj.INSPECTOR_5_SERIAL ?? "",
+    ntcNumber: obj.ntcNumber ?? obj.NTC_NUMBER ?? "",
+    ntcDate: obj.ntcDate ?? obj.NTC_DATE ?? "",
 
-  chiefName: obj.chiefName ?? obj.CHIEF ?? "",
-  chiefPosition: obj.chiefPosition ?? obj.CHIEF_POSITION ?? "",
-  marshalName: obj.marshalName ?? obj.MARSHAL ?? "",
-});
+    nfsiNumber: obj.nfsiNumber ?? obj.NFSI_NUMBER ?? "",
+    nfsiDate: obj.nfsiDate ?? obj.NFSI_DATE ?? "",
+
+    inspectors: obj.inspectors ?? obj.INSPECTORS ?? "",
+
+    teamLeader: obj.teamLeader ?? obj.TEAM_LEADER ?? "",
+    teamLeaderSerial: obj.teamLeaderSerial ?? obj.TEAM_LEADER_SERIAL ?? "",
+
+    inspector1: obj.inspector1 ?? obj.INSPECTOR_1 ?? "",
+    inspector1Serial: obj.inspector1Serial ?? obj.INSPECTOR_1_SERIAL ?? "",
+
+    inspector2: obj.inspector2 ?? obj.INSPECTOR_2 ?? "",
+    inspector2Serial: obj.inspector2Serial ?? obj.INSPECTOR_2_SERIAL ?? "",
+
+    inspector3: obj.inspector3 ?? obj.INSPECTOR_3 ?? "",
+    inspector3Serial: obj.inspector3Serial ?? obj.INSPECTOR_3_SERIAL ?? "",
+
+    inspector4: obj.inspector4 ?? obj.INSPECTOR_4 ?? "",
+    inspector4Serial: obj.inspector4Serial ?? obj.INSPECTOR_4_SERIAL ?? "",
+
+    inspector5: obj.inspector5 ?? obj.INSPECTOR_5 ?? "",
+    inspector5Serial: obj.inspector5Serial ?? obj.INSPECTOR_5_SERIAL ?? "",
+
+    chiefName: obj.chiefName ?? obj.CHIEF ?? "",
+    chiefPosition: obj.chiefPosition ?? obj.CHIEF_POSITION ?? "",
+    marshalName: obj.marshalName ?? obj.MARSHAL ?? "",
+  };
+};
 
 const makeId = () => {
   try {
@@ -474,8 +503,17 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
 
     const view = {
       // record/document fields
-      FSIC_NUMBER: record.fsicNo || record.FSIC_NUMBER || record.fsicNumber || "",
-      FSIC_APP_NO: record.FSIC_APP_NO || record.fsicAppNo || "",
+FSIC_NUMBER:
+    record.fsicNo ||
+    record.FSIC_NUMBER ||
+    record.fsicNumber ||
+    "",
+
+  FSIC_APP_NO:
+    record.fsicAppNo ||
+    record.FSIC_APP_NO ||
+    "",
+    
       DATE_INSPECTED: toLongDate(
         record.DATE_INSPECTED || record.dateInspected || ""
       ),
