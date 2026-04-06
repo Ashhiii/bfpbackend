@@ -154,6 +154,21 @@ const toLongDate = (v) => {
   return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 };
 
+const formatIssuedDay = (day) => {
+  const n = Number(day);
+  if (!Number.isFinite(n)) return String(day || "");
+
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+
+  const mod10 = n % 10;
+  if (mod10 === 1) return `${n}st`;
+  if (mod10 === 2) return `${n}nd`;
+  if (mod10 === 3) return `${n}rd`;
+  return `${n}th`;
+};
+
+
 const pickAllowedRecordFields = (obj = {}) => ({
   FSIC_NUMBER: obj.FSIC_NUMBER || obj.fsicNo || "",
   FSIC_APP_NO: obj.FSIC_APP_NO || obj.fsicAppNo || "",
@@ -597,7 +612,7 @@ const generatePDF = (record, templateFile, filenameBase, res) => {
       CLEARANCE_VALIDITY: toLongDate(
         record.CLEARANCE_VALIDITY || record.clearanceValidity || record.VALID_UNTIL || record.validUntil || ""
       ),
-      ISSUED_DAY: record.ISSUED_DAY || record.issuedDay || "",
+      ISSUED_DAY: formatIssuedDay(record.ISSUED_DAY || record.issuedDay || ""),
       ISSUED_MONTH: record.ISSUED_MONTH || record.issuedMonth || "",
       STORAGE_ADDRESS: record.STORAGE_ADDRESS || record.storageAddress || "",
       OPERATION_DURATION: record.OPERATION_DURATION || record.operationDuration || "",
