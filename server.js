@@ -1189,8 +1189,8 @@ app.get("/clearances/:id/certificate/:type/pdf", async (req, res) => {
     else if (type === "hotworks") templateFile = "FSED-34F-Hot-Works.docx";
     else if (type === "firedrill") templateFile = "FSED-44F-Fire-Drill-Rev02.docx";
     else if (type === "fumigation") templateFile = "FSED-41F-Fumigation.docx";
-    else if (type === "seminar") templateFile = "Seminar.docx";
-    else if (type === "firesafety") templateFile = "Fire-Safety.docx";
+    else if (type === "seminar") templateFile = "FSED-Seminar.docx";
+    else if (type === "firesafety") templateFile = "FSED-Fire-Safety.docx";
 
     else return res.status(400).send("Invalid clearance certificate type");
 
