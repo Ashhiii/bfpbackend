@@ -1227,7 +1227,7 @@ app.get("/clearances/:id/pdf", async (req, res) => {
     } else if (type === "fumigation") {
       templateFile = "FSED-41F-Fumigation.docx";
     } else if (type === "seminar") {
-      templateFile = "Seminar.docx";
+      templateFile = "FSED-Seminar.docx";
     } else if (type === "firesafety") {
       templateFile = "Fire-Safety.docx";
 
