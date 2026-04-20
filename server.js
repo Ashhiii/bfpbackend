@@ -312,7 +312,6 @@ const pickAllowedClearanceFields = (obj = {}) => ({
   contactNumber: obj.contactNumber ?? obj.CONTACT_NUMBER ?? "",
 
   // NEW COMMON CLEARANCE FIELDS
-  controlNumber: obj.controlNumber ?? obj.CONTROL_NUMBER ?? "",
   clearanceDate: obj.clearanceDate ?? obj.CLEARANCE_DATE ?? "",
   clearanceValidity:
     obj.clearanceValidity ?? obj.CLEARANCE_VALIDITY ?? obj.validUntil ?? obj.VALID_UNTIL ?? "",
@@ -379,7 +378,6 @@ const pickAllowedClearanceFields = (obj = {}) => ({
   issuedDay: obj.issuedDay ?? obj.ISSUED_DAY ?? "",
   issuedMonth: obj.issuedMonth ?? obj.ISSUED_MONTH ?? "",
 
-  // Fumigation
 // Fumigation
 operatorName: obj.operatorName ?? obj.OPERATOR_NAME ?? "",
 operationTime: obj.operationTime ?? obj.OPERATION_TIME ?? "",
@@ -387,6 +385,27 @@ operationDate: obj.operationDate ?? obj.OPERATION_DATE ?? "",
 operationDuration: obj.operationDuration ?? obj.OPERATION_DURATION ?? "",
 foggingAddress: obj.foggingAddress ?? obj.FOGGING_ADDRESS ?? "",
 conductedBy: obj.conductedBy ?? obj.CONDUCTED_BY ?? "",
+
+//Seminar
+    fireDrillDate:
+      obj.fireDrillDate ??
+      obj.dateConducted ??
+      obj.DATE_CONDUCTED ??
+      "",
+    issuedDay: obj.issuedDay ?? obj.ISSUED_DAY ?? "",
+    issuedMonth: obj.issuedMonth ?? obj.ISSUED_MONTH ?? "",
+    
+    //Fire Safety
+    plateNumber: obj.plateNumber ?? obj.PLATE_NUMBER ?? "",
+    vehicleType: obj.vehicleType ?? obj.TYPE_OF_VEHICLE ?? "",
+    brandOfVehicle: obj.brandOfVehicle ?? obj.BRAND_OF_VEHICLE ?? "",
+    engineNumber: obj.engineNumber ?? obj.ENGINE_NUMBER ?? "",
+    chassisNumber: obj.chassisNumber ?? obj.CHASSIS_NUMBER ?? "",
+    permitNumber: obj.permitNumber ?? obj.PERMIT_NUMBER ?? "",
+    fsicIssued: obj.fsicIssued ?? obj.FSIC_ISSUED ?? "",
+    cageSize: obj.cageSize ?? obj.CAGE_SIZE ?? "",
+    capacity: obj.capacity ?? obj.CAPACITY ?? "",
+
 
   createdAt: obj.createdAt || new Date().toISOString(),
 });
@@ -658,7 +677,32 @@ FSIC_NUMBER:
   record.FOGGING_ADDRESS || record.foggingAddress || record.fogging_address || "",
 CONDUCTED_BY:
   record.CONDUCTED_BY || record.conductedBy || record.conducted_by || "",
+
+  BRAND_OF_VEHICLE:
+  record.BRAND_OF_VEHICLE || record.brandOfVehicle || "",
+
+ENGINE_NUMBER:
+  record.ENGINE_NUMBER || record.engineNumber || "",
+
+PERMIT_NUMBER:
+  record.PERMIT_NUMBER || record.permitNumber || "",
+
+FSIC_ISSUED:
+  record.FSIC_ISSUED || record.fsicIssued || "",
+
+CAGE_SIZE:
+  record.CAGE_SIZE || record.cageSize || "",
+
+  OR_NUMBER:
+  record.OR_NUMBER || record.orNumber || "",
+
+OR_AMOUNT:
+  record.OR_AMOUNT || record.orAmount || record.amountPaid || "",
+
+OR_DATE:
+  toLongDate(record.OR_DATE || record.orDate || ""),
     };
+    
 
     doc.render(view);
 
@@ -1145,6 +1189,9 @@ app.get("/clearances/:id/certificate/:type/pdf", async (req, res) => {
     else if (type === "hotworks") templateFile = "FSED-34F-Hot-Works.docx";
     else if (type === "firedrill") templateFile = "FSED-44F-Fire-Drill-Rev02.docx";
     else if (type === "fumigation") templateFile = "FSED-41F-Fumigation.docx";
+    else if (type === "seminar") templateFile = "Seminar.docx";
+    else if (type === "firesafety") templateFile = "Fire-Safety.docx";
+
     else return res.status(400).send("Invalid clearance certificate type");
 
     console.log("USING TEMPLATE:", templateFile);
@@ -1179,6 +1226,11 @@ app.get("/clearances/:id/pdf", async (req, res) => {
       templateFile = "FSED-44F-Fire-Drill-Rev02.docx";
     } else if (type === "fumigation") {
       templateFile = "FSED-41F-Fumigation.docx";
+    } else if (type === "seminar") {
+      templateFile = "Seminar.docx";
+    } else if (type === "firesafety") {
+      templateFile = "Fire-Safety.docx";
+
     } else {
       return res.status(400).send("Invalid clearance type");
     }
