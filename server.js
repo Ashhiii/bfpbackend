@@ -222,6 +222,7 @@ const pickAllowedRecordFields = (obj = {}) => {
     chiefName: obj.chiefName ?? obj.CHIEF ?? "",
     chiefPosition: obj.chiefPosition ?? obj.CHIEF_POSITION ?? "",
     marshalName: obj.marshalName ?? obj.MARSHAL ?? "",
+    marshalPosition: obj.marshalPosition ?? obj.MARSHAL_POSITION ?? "",
   };
 };
 
@@ -279,6 +280,7 @@ const pickAllowedDocumentFields = (obj = {}) => {
     chiefName: obj.chiefName ?? obj.CHIEF ?? "",
     chiefPosition: obj.chiefPosition ?? obj.CHIEF_POSITION ?? "",
     marshalName: obj.marshalName ?? obj.MARSHAL ?? "",
+    marshalPosition: obj.marshalPosition ?? obj.MARSHAL_POSITION ?? "",
   };
 };
 
@@ -325,6 +327,7 @@ const pickAllowedClearanceFields = (obj = {}) => ({
   chiefName: obj.chiefName ?? obj.CHIEF ?? obj.CHIEF_FSES ?? "",
   chiefPosition: obj.chiefPosition ?? obj.CHIEF_POSITION ?? "",
   marshalName: obj.marshalName ?? obj.MARSHAL ?? obj.FIRE_MARSHAL ?? "",
+  marshalPosition: obj.marshalPosition ?? obj.MARSHAL_POSITION ?? "",
 
   amountPaid: obj.amountPaid ?? obj.AMOUNT_PAID ?? obj.OR_AMOUNT ?? "",
 
@@ -606,6 +609,7 @@ FSIC_NUMBER:
       CHIEF: record.CHIEF || record.chiefName || "",
       CHIEF_POSITION: record.CHIEF_POSITION || record.chiefPosition || "",
       MARSHAL: record.MARSHAL || record.marshalName || "",
+      MARSHAL_POSITION: record.MARSHAL_POSITION || record.marshalPosition || "",
 
       // clearance fields
       NAME_OF_BUILDING:
@@ -867,6 +871,7 @@ const mapExcelRowToRecord = (row = {}) => {
     chiefName: String(get("chiefname", "chief") || ""),
     chiefPosition: String(get("chiefposition", "position") || ""),
     marshalName: String(get("marshalname", "marshal") || ""),
+    marshalPosition: String(get("marshalposition", "marshalposition") || ""),
   };
 
   rec.fsicAppNo = String(rec.fsicAppNo || "").toUpperCase().trim();
