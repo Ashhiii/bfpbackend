@@ -1245,7 +1245,7 @@ app.get("/clearances/:id/pdf", async (req, res) => {
     } else if (type === "firesafety") {
       templateFile = "Fire-Safety.docx";
     } else if (type === "fireworks") {
-      templateFile = "FSED-Exhibition.docx";
+      templateFile = "FSED-Fireworks-Exhibition.docx";
     } else {
       return res.status(400).send("Invalid clearance type");
     }
