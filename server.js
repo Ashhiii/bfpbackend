@@ -409,6 +409,9 @@ conductedBy: obj.conductedBy ?? obj.CONDUCTED_BY ?? "",
     cageSize: obj.cageSize ?? obj.CAGE_SIZE ?? "",
     capacity: obj.capacity ?? obj.CAPACITY ?? "",
 
+//EXHIBITION
+contractorName: obj.contractorName ?? obj.NAME_OF_CONTRACTOR ?? "",
+supervisor: obj.supervisor ?? obj.SUPERVISOR ?? "",
 
   createdAt: obj.createdAt || new Date().toISOString(),
 });
@@ -705,6 +708,11 @@ OR_AMOUNT:
 
 OR_DATE:
   toLongDate(record.OR_DATE || record.orDate || ""),
+  NAME_OF_CONTRACTOR:
+  record.NAME_OF_CONTRACTOR || record.contractorName || "",
+
+SUPERVISOR:
+  record.SUPERVISOR || record.supervisor || "",
     };
     
 
@@ -1196,6 +1204,7 @@ app.get("/clearances/:id/certificate/:type/pdf", async (req, res) => {
     else if (type === "fumigation") templateFile = "FSED-41F-Fumigation.docx";
     else if (type === "seminar") templateFile = "FSED-Seminar.docx";
     else if (type === "firesafety") templateFile = "FSED-Fire-Safety.docx";
+    else if (type === "fireworks") templateFile = "FSED-Fireworks-Exhibition.docx";
 
     else return res.status(400).send("Invalid clearance certificate type");
 
@@ -1235,7 +1244,8 @@ app.get("/clearances/:id/pdf", async (req, res) => {
       templateFile = "FSED-Seminar.docx";
     } else if (type === "firesafety") {
       templateFile = "Fire-Safety.docx";
-
+    } else if (type === "fireworks") {
+      templateFile = "FSED-Exhibition.docx";
     } else {
       return res.status(400).send("Invalid clearance type");
     }
